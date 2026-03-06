@@ -1,0 +1,41 @@
+services:
+  scheduler-db:
+    image: "postgres:${POSTGRES_VERSION:-15}"
+    container_name: scheduler-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${DB_NAME}"
+      POSTGRES_USER: "${DB_USER}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
+    ports:
+      - "4001:5432"
+    volumes:
+      - scheduler_postgres_data:/var/lib/postgresql/data
+    networks:
+      - scheduler-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: scheduler-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "${PGADMIN_DEFAULT_EMAIL}"
+      PGADMIN_DEFAULT_PASSWORD: "${PGADMIN_DEFAULT_PASSWORD}"
+    ports:
+      - "8081:80"
+    depends_on:
+      scheduler-db:
+        condition: service_healthy
+    networks:
+      - scheduler-network
+
+volumes:
+  scheduler_postgres_data:
+
+networks:
+  scheduler-network:

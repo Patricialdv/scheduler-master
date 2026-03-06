@@ -1,0 +1,85 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Panel de Administración — SGGAH{% endblock %}
+
+{% block nav-sidebar %}{% endblock %}
+
+{% block content %}
+<div id="content-main" style="width:100%;">
+    <h1 style="font-size:1.4rem;font-weight:700;color:#1a1a2e;margin-bottom:24px;">Panel de Administración</h1>
+
+    {% if app_list %}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:20px;">
+        {% for app in app_list %}
+        <div class="module" style="margin:0;">
+            <table style="width:100%;">
+            <caption>
+                {% if app.app_label == "auth" %}Autenticación y Autorización{% elif app.app_label == "data_management" %}Gestión de Datos{% else %}{{ app.name }}{% endif %}
+            </caption>
+            {% for model in app.models %}
+            <tr class="model-{{ model.object_name|lower }}">
+                <th scope="row" style="padding:9px 14px;text-align:left;">
+                    {% if model.admin_url %}
+                        <a href="{{ model.admin_url }}" style="color:#1a1a2e;font-weight:500;text-decoration:none;">{{ model.name }}</a>
+                    {% else %}
+                        {{ model.name }}
+                    {% endif %}
+                </th>
+                <td style="width:90px;text-align:right;padding:9px 8px;">
+                    {% if model.add_url %}
+                    <a href="{{ model.add_url }}" style="color:#166534;text-decoration:none;font-size:0.82rem;font-weight:600;display:inline-flex;align-items:center;gap:3px;">
+                        <span class="material-icons-round" style="font-size:14px;">add</span> Agregar
+                    </a>
+                    {% endif %}
+                </td>
+                <td style="width:100px;text-align:right;padding:9px 14px 9px 4px;">
+                    {% if model.admin_url %}
+                    <a href="{{ model.admin_url }}" style="color:#1a1a2e;text-decoration:none;font-size:0.82rem;font-weight:600;display:inline-flex;align-items:center;gap:3px;">
+                        <span class="material-icons-round" style="font-size:14px;">edit</span> Modificar
+                    </a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </table>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+        <p>Sin modelos disponibles.</p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block sidebar %}
+<div id="content-related">
+    <div id="recent-actions-module" class="module">
+        <h2>Acciones Recientes</h2>
+        <div class="module-content">
+        {% if action_list %}
+            <ul style="padding:8px 16px;list-style:none;margin:0;">
+            {% for entry in action_list %}
+            <li style="padding:7px 0;border-bottom:1px solid #f0f0f5;font-size:0.83rem;">
+                {% if entry.is_deletion or not entry.get_admin_url %}
+                    <span style="color:#1a1a2e;font-weight:500;">{{ entry.object_repr }}</span>
+                {% else %}
+                    <a href="{{ entry.get_admin_url }}" style="color:#1a1a2e;font-weight:500;text-decoration:none;">{{ entry.object_repr }}</a>
+                {% endif %}
+                <br>
+                <span style="color:#9ca3af;font-size:0.76rem;">
+                    {% if entry.is_addition %}<span style="color:#166534;">Agregado</span>{% endif %}
+                    {% if entry.is_change %}<span style="color:#92400e;">Modificado</span>{% endif %}
+                    {% if entry.is_deletion %}<span style="color:#991b1b;">Eliminado</span>{% endif %}
+                    · {{ entry.content_type }}
+                </span>
+            </li>
+            {% endfor %}
+            </ul>
+        {% else %}
+            <p style="padding:12px 16px;color:#9ca3af;font-size:0.85rem;">Sin acciones recientes.</p>
+        {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

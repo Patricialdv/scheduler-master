@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Horario — UCI Scheduler</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', Arial, sans-serif; background: #f5f6fa; color: #1a1a2e; }
+        .page { padding: 24px 28px; }
+
+        /* Top bar */
+        .topbar {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-wrap: wrap; gap: 12px; margin-bottom: 20px;
+            background: white; border-radius: 12px;
+            padding: 14px 20px; box-shadow: 0 2px 8px rgba(26,26,46,0.06);
+        }
+        .topbar-left h1 { font-size: 1.1rem; font-weight: 700; color: #1a1a2e; }
+        .topbar-left .week-label { font-size: 0.85rem; color: #6b7280; margin-top: 2px; display: flex; align-items: center; gap: 5px; }
+        .topbar-left .week-label .material-icons-round { font-size: 15px; }
+        .topbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .topbar-right select {
+            padding: 7px 28px 7px 10px; border: 1.5px solid #e5e7eb;
+            border-radius: 7px; font-size: 0.85rem; color: #1a1a2e;
+            background: white; cursor: pointer; font-family: 'Inter', Arial, sans-serif;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='%236b7280'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right 8px center;
+        }
+        .topbar-right select:focus { outline: none; border-color: #1a1a2e; }
+        .btn-back {
+            display: flex; align-items: center; gap: 5px;
+            padding: 7px 13px; background: white; color: #1a1a2e;
+            border: 1.5px solid #e5e7eb; border-radius: 7px;
+            font-size: 0.85rem; font-weight: 500; text-decoration: none;
+            transition: border-color 0.15s;
+        }
+        .btn-back:hover { border-color: #1a1a2e; }
+        .btn-back .material-icons-round { font-size: 16px; }
+        .badge {
+            display: flex; align-items: center; gap: 5px;
+            padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;
+        }
+        .badge .material-icons-round { font-size: 14px; }
+        .badge-perfect { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+        .badge-score   { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+
+        /* Legend */
+        .legend {
+            display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;
+        }
+        .legend-item { display: flex; align-items: center; gap: 7px; font-size: 0.82rem; color: #374151; font-weight: 500; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+        /* Group section */
+        .group-section {
+            background: white; border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(26,26,46,0.06);
+            margin-bottom: 24px; overflow: hidden;
+        }
+        .group-title {
+            display: flex; align-items: center; gap: 8px;
+            background: #1a1a2e; color: white;
+            padding: 11px 18px; font-size: 0.9rem; font-weight: 600;
+        }
+        .group-title .material-icons-round { font-size: 18px; opacity: 0.8; }
+
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #f0f0f5; padding: 9px 8px; text-align: center; vertical-align: middle; }
+        th { background: #fafafa; font-size: 0.8rem; color: #6b7280; font-weight: 600; letter-spacing: 0.3px; }
+        .slot-header { text-align: left; min-width: 120px; background: #fafafa; padding: 9px 14px; }
+        .slot-num { font-weight: 700; font-size: 0.85rem; color: #1a1a2e; }
+        .slot-time { font-size: 0.75rem; color: #9ca3af; font-weight: 400; }
+        .cell-empty { color: #d1d5db; font-size: 0.78rem; }
+
+        .cell-content {
+            border-left: 3px solid; text-align: left;
+            padding: 8px 10px; border-radius: 6px; font-size: 0.8rem; line-height: 1.55;
+        }
+        .cell-C  { background: #f0fdf4; border-color: #22c55e; }
+        .cell-CP { background: #fffbeb; border-color: #f59e0b; }
+        .cell-L  { background: #eff6ff; border-color: #3b82f6; }
+
+        .cell-badge {
+            display: inline-flex; align-items: center; gap: 3px;
+            padding: 1px 7px; border-radius: 4px;
+            font-size: 0.7rem; font-weight: 700; margin-bottom: 4px; color: white;
+        }
+        .cell-badge .material-icons-round { font-size: 11px; }
+        .badge-C  { background: #22c55e; }
+        .badge-CP { background: #f59e0b; }
+        .badge-L  { background: #3b82f6; }
+
+        .cell-subject { font-weight: 700; font-size: 0.88rem; color: #1a1a2e; margin-bottom: 3px; }
+        .cell-meta { display: flex; align-items: center; gap: 4px; color: #6b7280; font-size: 0.76rem; }
+        .cell-meta .material-icons-round { font-size: 13px; }
+        .cell-shared { display: flex; align-items: center; gap: 4px; color: #7c3aed; font-size: 0.74rem; margin-top: 2px; }
+        .cell-shared .material-icons-round { font-size: 13px; }
+    </style>
+</head>
+<body>
+{% include "base/navbar.html" %}
+<div class="page">
+
+    <div class="topbar">
+        <div class="topbar-left">
+            <h1>{{ period }}</h1>
+            <div class="week-label">
+                <span class="material-icons-round">date_range</span>
+                {{ week_label }}
+            </div>
+        </div>
+        <div class="topbar-right">
+            <form method="get" action="{% url 'view_schedule' %}" style="display:flex;gap:8px;align-items:center;">
+                <select name="period_id" onchange="this.form.submit()">
+                    {% for p in periods %}
+                        <option value="{{ p.id }}" {% if p.id == period.id %}selected{% endif %}>{{ p }}</option>
+                    {% endfor %}
+                </select>
+                <select name="week_number" onchange="this.form.submit()">
+                    {% for w in week_choices %}
+                        <option value="{{ w.number }}" {% if w.number == week_number %}selected{% endif %}>{{ w.label }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+            <a href="{% url 'schedule_selector' %}" class="btn-back">
+                <span class="material-icons-round">arrow_back</span> Selector
+            </a>
+        </div>
+    </div>
+
+    <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>Conferencia</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>Clase Práctica</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>Laboratorio</div>
+    </div>
+
+    {% for group in display_groups %}
+    <div class="group-section">
+        <div class="group-title">
+            <span class="material-icons-round">group</span>
+            Grupo {{ group.group_code }}
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th class="slot-header">Turno</th>
+                    {% for day in day_labels %}<th>{{ day }}</th>{% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in group.rows %}
+                <tr>
+                    <td class="slot-header">
+                        <div class="slot-num">T{{ row.slot_index }}</div>
+                        <div class="slot-time">{{ row.slot_label }}</div>
+                    </td>
+                    {% for cell in row.cells %}
+                        {% if cell.empty %}
+                            <td class="cell-empty">—</td>
+                        {% else %}
+                            <td>
+                                <div class="cell-content cell-{{ cell.activity_type }}">
+                                    <span class="cell-badge badge-{{ cell.activity_type }}">
+                                        <span class="material-icons-round">
+                                            {% if cell.activity_type == 'C' %}cast_for_education
+                                            {% elif cell.activity_type == 'CP' %}edit_note
+                                            {% else %}science{% endif %}
+                                        </span>
+                                        {{ cell.activity_type }}
+                                    </span>
+                                    <div class="cell-subject">{{ cell.subject }}</div>
+                                    <div class="cell-meta">
+                                        <span class="material-icons-round">person</span>{{ cell.professor_name }}
+                                    </div>
+                                    <div class="cell-meta">
+                                        <span class="material-icons-round">meeting_room</span>{{ cell.room }}
+                                    </div>
+                                    {% if ',' in cell.groups %}
+                                    <div class="cell-shared">
+                                        <span class="material-icons-round">groups</span>{{ cell.groups }}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        {% endif %}
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% empty %}
+        <p style="color:#6b7280;padding:20px;text-align:center;">No se encontraron horarios para esta selección.</p>
+    {% endfor %}
+</div>
+</body>
+</html>

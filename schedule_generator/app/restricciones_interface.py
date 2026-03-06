@@ -1,0 +1,2 @@
+class RestriccionInterface:
+    pass

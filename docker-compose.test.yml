@@ -1,0 +1,15 @@
+services:
+  test-db:
+    image: "postgres:${POSTGRES_VERSION}"
+    container_name: scheduler-test-db
+    environment:
+      POSTGRES_DB: scheduler-test-db
+      POSTGRES_USER: test-user
+      POSTGRES_PASSWORD: test-password
+    ports:
+      - "5433:5432"
+    networks:
+      - test-network
+
+networks:
+  test-network:

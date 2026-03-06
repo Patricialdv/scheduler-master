@@ -1,0 +1,31 @@
+/* Hide SimpleUI top bar */
+#header {
+    display: none !important;
+}
+/* Inject space for our fixed navbar */
+body {
+    padding-top: 56px !important;
+}
+/* SimpleUI sidebar */
+.main-sidebar,
+#nav-sidebar {
+    top: 56px !important;
+}
+/* Buttons */
+.el-button--primary,
+input[type=submit],
+.button {
+    background-color: #1a1a2e !important;
+    border-color: #1a1a2e !important;
+    border-radius: 6px !important;
+}
+.button.default {
+    background-color: #4f46e5 !important;
+    border-color: #4f46e5 !important;
+}
+/* Module headers */
+.module caption, .module h2 {
+    background: #1a1a2e !important;
+    color: white !important;
+}
+a { color: #4f46e5 !important; }

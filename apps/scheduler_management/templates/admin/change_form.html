@@ -1,0 +1,37 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% block content_title %}
+{% if add %}<h1>Agregar {{ opts.verbose_name }}</h1>
+{% else %}<h1>Editar {{ opts.verbose_name }}: {{ original }}</h1>{% endif %}
+{% endblock %}
+
+{% block submit_buttons_bottom %}
+<div class="submit-row" style="background:white!important;border-top:1px solid #e5e7eb;padding:12px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <input type="submit" value="Guardar" class="default button" name="_save">
+    {% if show_save_and_add_another %}
+    <input type="submit" value="Guardar y agregar otro" class="button" name="_addanother">
+    {% endif %}
+    {% if show_save_and_continue %}
+    <input type="submit" value="Guardar y continuar editando" class="button" name="_continue">
+    {% endif %}
+    {% if show_delete_link %}
+    <a href="../delete/"
+       class="deletelink"
+       style="margin-left:auto;">
+        Eliminar
+    </a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block object-tools-items %}
+{% if not add %}
+<li>
+    <a href="history/" class="historylink">
+        <span class="material-icons-round" style="font-size:15px;vertical-align:middle;">history</span>
+        Historial
+    </a>
+</li>
+{% endif %}
+{% endblock %}

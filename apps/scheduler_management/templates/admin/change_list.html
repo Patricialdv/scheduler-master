@@ -1,0 +1,29 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block content_title %}
+<h1>{{ cl.opts.verbose_name_plural|capfirst }}</h1>
+{% endblock %}
+
+{% block object-tools-items %}
+<li>
+    <a href="add/{% if cl.preserved_filters %}?{{ cl.preserved_filters }}{% endif %}"
+       class="addlink">
+        <span class="material-icons-round" style="font-size:15px;vertical-align:middle;">add</span>
+        Agregar {{ cl.opts.verbose_name }}
+    </a>
+</li>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Inicio</a>
+    &rsaquo;
+    <a href="{% url 'admin:app_list' cl.opts.app_label %}">
+        {% if cl.opts.app_label == "data_management" %}Gestión de Datos
+        {% elif cl.opts.app_label == "auth" %}Autenticación
+        {% else %}{{ cl.opts.app_label|capfirst }}{% endif %}
+    </a>
+    &rsaquo; {{ cl.opts.verbose_name_plural|capfirst }}
+</div>
+{% endblock %}

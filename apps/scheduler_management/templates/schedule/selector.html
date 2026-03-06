@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Seleccionar Horario — UCI Scheduler</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', Arial, sans-serif; background: #f5f6fa; min-height: 100vh; color: #1a1a2e; }
+        .page { display: flex; justify-content: center; align-items: center; min-height: calc(100vh - 58px); padding: 32px 16px; }
+        .card {
+            background: white; border-radius: 14px;
+            box-shadow: 0 4px 24px rgba(26,26,46,0.08);
+            padding: 40px; width: 100%; max-width: 460px;
+        }
+        .card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+        .card-header .icon-wrap {
+            width: 42px; height: 42px; background: #1a1a2e;
+            border-radius: 10px; display: flex; align-items: center; justify-content: center;
+        }
+        .card-header .material-icons-round { font-size: 22px; color: white; }
+        .card-header h1 { font-size: 1.3rem; font-weight: 700; color: #1a1a2e; }
+        .subtitle { color: #6b7280; font-size: 0.88rem; margin-bottom: 28px; padding-left: 54px; }
+        label {
+            display: flex; align-items: center; gap: 7px;
+            font-size: 0.82rem; font-weight: 600; color: #374151;
+            text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 7px;
+        }
+        label .material-icons-round { font-size: 15px; color: #6b7280; }
+        select {
+            width: 100%; padding: 10px 14px;
+            border: 1.5px solid #e5e7eb; border-radius: 8px;
+            font-size: 0.95rem; color: #1a1a2e; background: white;
+            margin-bottom: 20px; cursor: pointer;
+            font-family: 'Inter', Arial, sans-serif;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='%236b7280'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right 12px center;
+        }
+        select:focus { outline: none; border-color: #1a1a2e; box-shadow: 0 0 0 3px rgba(26,26,46,0.08); }
+        .btn {
+            width: 100%; padding: 12px; background: #1a1a2e; color: white;
+            border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 600;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            gap: 8px; font-family: 'Inter', Arial, sans-serif;
+            transition: background 0.2s;
+        }
+        .btn:hover { background: #2d2d5e; }
+        .btn .material-icons-round { font-size: 18px; }
+        .no-periods {
+            display: flex; align-items: center; gap: 8px;
+            color: #dc2626; font-size: 0.88rem;
+            padding: 12px 16px; background: #fef2f2;
+            border-radius: 8px; border: 1px solid #fecaca;
+        }
+    </style>
+</head>
+<body>
+{% include "base/navbar.html" %}
+<div class="page">
+    <div class="card">
+        <div class="card-header">
+            <div class="icon-wrap"><span class="material-icons-round">calendar_month</span></div>
+            <h1>Visualizar Horario</h1>
+        </div>
+        <p class="subtitle">Selecciona el período y la semana que deseas ver.</p>
+
+        {% if periods %}
+        <form method="get" action="{% url 'view_schedule' %}">
+            <label for="period_id">
+                <span class="material-icons-round">school</span> Período
+            </label>
+            <select name="period_id" id="period_id" onchange="updateWeeks(this)">
+                {% for period in periods %}
+                    <option value="{{ period.id }}"
+                        data-weeks="{{ period.weeks_count }}"
+                        data-start="{{ period.start_date|date:'Y-m-d' }}"
+                        {% if selected_period and selected_period.id == period.id %}selected{% endif %}>
+                        {{ period }}
+                    </option>
+                {% endfor %}
+            </select>
+
+            <label for="week_number">
+                <span class="material-icons-round">date_range</span> Semana
+            </label>
+            <select name="week_number" id="week_number">
+                {% if week_choices %}
+                    {% for w in week_choices %}
+                        <option value="{{ w.number }}">{{ w.label }}</option>
+                    {% endfor %}
+                {% endif %}
+            </select>
+
+            <button type="submit" class="btn">
+                <span class="material-icons-round">visibility</span> Ver horario
+            </button>
+        </form>
+        {% else %}
+        <div class="no-periods">
+            <span class="material-icons-round">error_outline</span>
+            No hay períodos activos. Activa uno desde el panel de administración.
+        </div>
+        {% endif %}
+    </div>
+</div>
+<script>
+function updateWeeks(selectEl) {
+    const option = selectEl.options[selectEl.selectedIndex];
+    const weeksCount = parseInt(option.dataset.weeks) || 16;
+    const startStr = option.dataset.start;
+    const weekSelect = document.getElementById('week_number');
+    weekSelect.innerHTML = '';
+    const baseOpt = document.createElement('option');
+    baseOpt.value = '0';
+    baseOpt.textContent = 'Horario Base (patrón general)';
+    weekSelect.appendChild(baseOpt);
+    if (!startStr || startStr === 'None') return;
+    const start = new Date(startStr + 'T00:00:00');
+    const diff = (start.getDay() === 0) ? -6 : 1 - start.getDay();
+    const monday = new Date(start);
+    monday.setDate(monday.getDate() + diff);
+    const months = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    for (let w = 1; w <= weeksCount; w++) {
+        const wMon = new Date(monday); wMon.setDate(monday.getDate() + (w-1)*7);
+        const wFri = new Date(wMon); wFri.setDate(wMon.getDate() + 4);
+        const opt = document.createElement('option');
+        opt.value = w;
+        opt.textContent = `Semana ${w}: ${wMon.getDate()} ${months[wMon.getMonth()]} - ${wFri.getDate()} ${months[wFri.getMonth()]}`;
+        weekSelect.appendChild(opt);
+    }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+<style>
+.uci-navbar {
+    position: sticky; top: 0; z-index: 1000;
+    display: flex; align-items: center; justify-content: space-between;
+    background: #1a1a2e; padding: 0 32px; height: 58px;
+    box-shadow: 0 2px 12px rgba(26,26,46,0.15);
+}
+.uci-navbar .brand {
+    display: flex; align-items: center; gap: 10px;
+    text-decoration: none; color: white;
+    font-size: 1rem; font-weight: 700; letter-spacing: 0.2px;
+}
+.uci-navbar .brand .brand-icon {
+    width: 32px; height: 32px; background: rgba(255,255,255,0.12);
+    border-radius: 8px; display: flex; align-items: center; justify-content: center;
+}
+.uci-navbar .brand .brand-icon .material-icons-round { font-size: 18px; color: white; }
+.uci-navbar .nav-links { display: flex; align-items: center; gap: 2px; }
+.uci-navbar .nav-link {
+    display: flex; align-items: center; gap: 6px;
+    color: rgba(255,255,255,0.7); text-decoration: none;
+    padding: 6px 14px; border-radius: 7px;
+    font-size: 0.875rem; font-weight: 500;
+    transition: background 0.15s, color 0.15s;
+}
+.uci-navbar .nav-link .material-icons-round { font-size: 17px; }
+.uci-navbar .nav-link:hover { background: rgba(255,255,255,0.1); color: white; }
+.uci-navbar .nav-link.active { background: rgba(255,255,255,0.15); color: white; }
+.uci-navbar .nav-link.logout { color: rgba(255,120,120,0.9); }
+.uci-navbar .nav-link.logout:hover { background: rgba(255,80,80,0.12); color: #ff8080; }
+.uci-navbar .nav-divider { width: 1px; height: 20px; background: rgba(255,255,255,0.12); margin: 0 6px; }
+</style>
+
+<nav class="uci-navbar">
+    <a href="{% url 'landing_page' %}" class="brand">
+        <div class="brand-icon"><span class="material-icons-round">school</span></div>
+        SGGAH
+    </a>
+    <div class="nav-links">
+        <a href="{% url 'landing_page' %}" class="nav-link {% if request.resolver_match.url_name == 'landing_page' %}active{% endif %}">
+            <span class="material-icons-round">home</span> Inicio
+        </a>
+        <a href="{% url 'schedule_selector' %}" class="nav-link {% if 'schedule' in request.path %}active{% endif %}">
+            <span class="material-icons-round">calendar_month</span> Horarios
+        </a>
+        {% if user.is_authenticated %}
+        <div class="nav-divider"></div>
+        <a href="{% url 'admin:index' %}" class="nav-link">
+            <span class="material-icons-round">settings</span> Admin
+        </a>
+        <a href="{% url 'logout' %}" class="nav-link logout">
+            <span class="material-icons-round">logout</span> Salir
+        </a>
+        {% else %}
+        <div class="nav-divider"></div>
+        <a href="{% url 'login' %}" class="nav-link" style="background:#1a1a2e;border:1px solid rgba(255,255,255,0.25);">
+            <span class="material-icons-round">login</span> Entrar
+        </a>
+        {% endif %}
+    </div>
+</nav>
