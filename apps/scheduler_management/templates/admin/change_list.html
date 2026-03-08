@@ -19,11 +19,53 @@
 <div class="breadcrumbs">
     <a href="{% url 'admin:index' %}">Inicio</a>
     &rsaquo;
-    <a href="{% url 'admin:app_list' cl.opts.app_label %}">
-        {% if cl.opts.app_label == "data_management" %}Gestión de Datos
-        {% elif cl.opts.app_label == "auth" %}Autenticación
-        {% else %}{{ cl.opts.app_label|capfirst }}{% endif %}
-    </a>
+    <a href="{% url 'admin:app_list' cl.opts.app_label %}">{% if cl.opts.app_label == "data_management" %}Gestión de Datos{% elif cl.opts.app_label == "auth" %}Autenticación y Autorización{% else %}{{ cl.opts.app_label|capfirst }}{% endif %}</a>
     &rsaquo; {{ cl.opts.verbose_name_plural|capfirst }}
 </div>
+{% endblock %}
+
+{% block search %}
+    {{ block.super }}
+    {% if cl.has_active_filters or cl.result_count %}
+    <form id="delete-form" method="post" action="" style="margin:0 0 10px 0;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete_selected">
+        <input type="hidden" name="index" value="0">
+        {% for obj in cl.result_list %}
+        <span data-pk="{{ obj.pk }}" style="display:none"></span>
+        {% endfor %}
+        <button type="button" id="btn-delete-selected"
+            style="background:#dc2626;color:white;border:none;padding:8px 18px;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
+            <span class="material-icons-round" style="font-size:15px;vertical-align:middle;">delete</span>
+            Eliminar seleccionados
+        </button>
+    </form>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('btn-delete-selected').addEventListener('click', function() {
+            var mainForm = document.querySelector('#changelist-form');
+            if (!mainForm) return;
+            var checked = mainForm.querySelectorAll('input[type=checkbox][name="_selected_action"]:checked');
+            if (checked.length === 0) { alert('Selecciona al menos un elemento.'); return; }
+            if (!confirm('¿Eliminar ' + checked.length + ' elemento(s) seleccionado(s)?')) return;
+
+            // Add action + index to main form and submit
+            var a = mainForm.querySelector('select[name="action"]');
+            if (a) { a.value = 'delete_selected'; }
+            else {
+                var hi = document.createElement('input');
+                hi.type='hidden'; hi.name='action'; hi.value='delete_selected';
+                mainForm.appendChild(hi);
+            }
+            var ix = mainForm.querySelector('input[name="index"]');
+            if (!ix) {
+                ix = document.createElement('input');
+                ix.type='hidden'; ix.name='index'; ix.value='0';
+                mainForm.appendChild(ix);
+            } else { ix.value='0'; }
+            mainForm.submit();
+        });
+    });
+    </script>
+    {% endif %}
 {% endblock %}

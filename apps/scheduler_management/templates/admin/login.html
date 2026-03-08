@@ -1,0 +1,316 @@
+{% load i18n static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SGGAH — Iniciar sesión</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --dark:    #1a1a2e;
+            --mid:     #16213e;
+            --accent:  #4f46e5;
+            --light-bg:#f5f6fa;
+            --border:  #e5e7eb;
+            --text:    #1a1a2e;
+            --muted:   #6b7280;
+            --error:   #dc2626;
+        }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: var(--light-bg);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        /* Background decorative blobs */
+        body::before, body::after {
+            content: '';
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.12;
+            pointer-events: none;
+            z-index: 0;
+        }
+        body::before {
+            width: 500px; height: 500px;
+            background: var(--accent);
+            top: -100px; left: -100px;
+        }
+        body::after {
+            width: 400px; height: 400px;
+            background: var(--dark);
+            bottom: -80px; right: -80px;
+        }
+
+        /* Card */
+        .login-card {
+            position: relative;
+            z-index: 1;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.04), 0 20px 60px rgba(26,26,46,0.10);
+            width: 100%;
+            max-width: 420px;
+            padding: 0;
+            overflow: hidden;
+            animation: slideUp 0.45s cubic-bezier(.22,.68,0,1.2) both;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(24px) scale(0.98); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        /* Header */
+        .card-header {
+            background: var(--dark);
+            padding: 32px 40px 28px;
+            text-align: center;
+        }
+
+        .logo-wrap {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 52px; height: 52px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 14px;
+            margin-bottom: 14px;
+        }
+
+        .logo-wrap .material-icons-round {
+            font-size: 28px;
+            color: white;
+        }
+
+        .card-header h1 {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+            margin-bottom: 4px;
+        }
+
+        .card-header p {
+            color: rgba(255,255,255,0.5);
+            font-size: 0.82rem;
+            font-weight: 400;
+        }
+
+        /* Body */
+        .card-body {
+            padding: 32px 40px 36px;
+        }
+
+        /* Error messages */
+        .errornote, .errorlist {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-left: 4px solid var(--error);
+            border-radius: 10px;
+            padding: 12px 14px;
+            color: var(--error);
+            font-size: 0.82rem;
+            margin-bottom: 20px;
+            list-style: none;
+        }
+
+        /* Form fields */
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            margin-bottom: 7px;
+        }
+
+        .input-wrap {
+            position: relative;
+        }
+
+        .input-wrap .material-icons-round {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 18px;
+            color: var(--muted);
+            pointer-events: none;
+            transition: color 0.2s;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 11px 14px 11px 40px;
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.9rem;
+            color: var(--text);
+            background: white;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            outline: none;
+        }
+
+        .form-group input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(79,70,229,0.10);
+        }
+
+        .form-group input:focus + .material-icons-round,
+        .input-wrap:focus-within .material-icons-round {
+            color: var(--accent);
+        }
+
+        /* Submit */
+        .btn-login {
+            width: 100%;
+            padding: 13px;
+            background: var(--dark);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.92rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 8px;
+            transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-login:hover {
+            background: #2d2d5e;
+            box-shadow: 0 4px 16px rgba(26,26,46,0.25);
+        }
+
+        .btn-login:active {
+            transform: scale(0.98);
+        }
+
+        .btn-login .material-icons-round {
+            font-size: 18px;
+        }
+
+        /* Footer link */
+        .card-footer {
+            border-top: 1px solid var(--border);
+            padding: 16px 40px;
+            text-align: center;
+            background: var(--light-bg);
+        }
+
+        .card-footer a {
+            color: var(--muted);
+            font-size: 0.78rem;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: color 0.2s;
+        }
+
+        .card-footer a:hover { color: var(--accent); }
+        .card-footer a .material-icons-round { font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="login-card">
+
+    <div class="card-header">
+        <div class="logo-wrap">
+            <span class="material-icons-round">school</span>
+        </div>
+        <h1>SGGAH</h1>
+        <p>Sistema de Gestión de Horarios</p>
+    </div>
+
+    <div class="card-body">
+
+        {% if form.errors %}
+        <ul class="errorlist">
+            <li>Usuario o contraseña incorrectos. Intenta de nuevo.</li>
+        </ul>
+        {% endif %}
+
+        {% if form.non_field_errors %}
+        <ul class="errorlist">
+            {% for error in form.non_field_errors %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
+        <form method="post" action="">
+            {% csrf_token %}
+
+            {% if next %}
+            <input type="hidden" name="next" value="{{ next }}">
+            {% else %}
+            <input type="hidden" name="next" value="/admin/">
+            {% endif %}
+
+            <div class="form-group">
+                <label for="id_username">Usuario</label>
+                <div class="input-wrap">
+                    <input type="text"
+                           id="id_username"
+                           name="username"
+                           value="{{ form.username.value|default:'' }}"
+                           autofocus
+                           autocomplete="username"
+                           placeholder="Nombre de usuario">
+                    <span class="material-icons-round">person</span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="id_password">Contraseña</label>
+                <div class="input-wrap">
+                    <input type="password"
+                           id="id_password"
+                           name="password"
+                           autocomplete="current-password"
+                           placeholder="••••••••">
+                    <span class="material-icons-round">lock</span>
+                </div>
+            </div>
+
+            <button type="submit" class="btn-login">
+                <span class="material-icons-round">login</span>
+                Iniciar sesión
+            </button>
+        </form>
+    </div>
+
+    <div class="card-footer">
+        <a href="/">
+            <span class="material-icons-round">arrow_back</span>
+            Volver al inicio
+        </a>
+    </div>
+
+</div>
+
+</body>
+</html>

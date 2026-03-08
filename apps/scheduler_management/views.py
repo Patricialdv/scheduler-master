@@ -123,7 +123,7 @@ def _persist_schedule(period, result, is_base, academic_week_day=None):
         for d in range(DAYS):
             for t in range(TIME_SLOTS_PER_DAY):
                 turn = matrix[d][t] if matrix[d] else None
-                if turn is None:
+                if turn is None or turn.is_empty_slot():
                     continue
 
                 time_slot = TimeSlot.objects.create(
@@ -138,10 +138,13 @@ def _persist_schedule(period, result, is_base, academic_week_day=None):
                 if not assignment:
                     continue
 
-                activity = Activity.objects.filter(
+                activity, _ = Activity.objects.get_or_create(
                     subject=assignment.subject,
                     activity_type=turn.activity_type,
-                ).first()
+                    defaults={'title': f'{assignment.subject.alias or assignment.subject.name} — {turn.activity_type}'}
+                )
+                if activity is None:
+                    continue
 
                 room_obj = None
                 if turn.room:

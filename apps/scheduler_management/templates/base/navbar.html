@@ -49,9 +49,7 @@
         <a href="{% url 'admin:index' %}" class="nav-link">
             <span class="material-icons-round">settings</span> Admin
         </a>
-        <a href="{% url 'logout' %}" class="nav-link logout">
-            <span class="material-icons-round">logout</span> Salir
-        </a>
+        <form method="post" action="{% url 'logout' %}" style="display:inline;">{% csrf_token %}<button type="submit" class="nav-link logout" style="background:none;border:none;cursor:pointer;font:inherit;"><span class="material-icons-round">logout</span> Cerrar sesión</button></form>
         {% else %}
         <div class="nav-divider"></div>
         <a href="{% url 'login' %}" class="nav-link" style="background:#1a1a2e;border:1px solid rgba(255,255,255,0.25);">

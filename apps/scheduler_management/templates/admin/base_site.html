@@ -623,6 +623,136 @@ div.breadcrumbs a[href*="auth"]::after {
     text-decoration: underline !important;
 }
 
+
+/* ===== ACTION BAR — hide dropdown, show delete button ===== */
+.actions label,
+.actions select[name="action"] {
+    display: none !important;
+}
+.actions button[name="index"] {
+    display: none !important;
+}
+
+
+/* ===== INLINE STACKED — fieldset headers con texto legible ===== */
+.inline-group h2 {
+    background: #1a1a2e !important;
+    color: white !important;
+    padding: 10px 16px !important;
+    font-size: 0.82rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.4px !important;
+    text-transform: uppercase !important;
+    border-radius: 8px 8px 0 0 !important;
+}
+.inline-group .module h3 {
+    background: #2d2d5e !important;
+    color: white !important;
+    padding: 8px 14px !important;
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
+    margin: 0 !important;
+}
+.inline-related .module {
+    border: 1px solid #e5e7eb !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+    margin-bottom: 12px !important;
+}
+.stacked.inline-related .module {
+    border: 1px solid #e5e7eb !important;
+}
+
+/* ===== FIELDSET COLLAPSE HEADERS — fondo oscuro → texto visible ===== */
+fieldset.module h2,
+fieldset > h2 {
+    background: #1a1a2e !important;
+    color: white !important;
+    padding: 8px 16px !important;
+    font-size: 0.82rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.4px !important;
+    border-radius: 0 !important;
+    cursor: pointer !important;
+}
+fieldset.collapsed > h2::after { content: ' ▸'; }
+fieldset:not(.collapsed) > h2::after { content: ' ▾'; }
+
+/* Description text under fieldset title */
+fieldset > p.description,
+fieldset .description {
+    background: #f8f9ff !important;
+    color: #374151 !important;
+    font-size: 0.82rem !important;
+    padding: 8px 16px !important;
+    border-bottom: 1px solid #e5e7eb !important;
+    margin: 0 !important;
+}
+
+/* ===== CHECKBOX GROUPS — días, turnos, semanas ===== */
+.checkbox-select ul,
+ul.checkbox-select {
+    list-style: none !important;
+    padding: 4px 0 !important;
+    margin: 0 !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+}
+.checkbox-select li label,
+ul.checkbox-select li label {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 5px !important;
+    padding: 4px 10px !important;
+    border: 1.5px solid #e5e7eb !important;
+    border-radius: 6px !important;
+    font-size: 0.82rem !important;
+    cursor: pointer !important;
+    background: white !important;
+    color: #374151 !important;
+    transition: all 0.15s !important;
+    user-select: none !important;
+}
+.checkbox-select li label:hover,
+ul.checkbox-select li label:hover {
+    border-color: #1a1a2e !important;
+    background: #f0f2ff !important;
+}
+.checkbox-select li input[type=checkbox],
+ul.checkbox-select li input[type=checkbox] {
+    position: relative !important;
+    width: 14px !important;
+    height: 14px !important;
+    margin: 0 !important;
+}
+
+/* Semanas grid — 4 columnas */
+.semanas-grid ul,
+ul.semanas-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 5px !important;
+}
+
+/* help text */
+.help,
+.help-block,
+p.help {
+    color: #6b7280 !important;
+    font-size: 0.78rem !important;
+    margin-top: 4px !important;
+}
+
+/* ===== ADD INLINE BUTTON ===== */
+.add-row a,
+.inline-group .add-row td a {
+    color: #4f46e5 !important;
+    font-weight: 600 !important;
+    font-size: 0.82rem !important;
+}
+
 </style>
 {% endblock %}
 
@@ -633,10 +763,67 @@ div.breadcrumbs a[href*="auth"]::after {
 <a href="/schedule/"><span class="material-icons-round" style="font-size:16px;vertical-align:middle;">calendar_month</span> Horarios</a>
 <span class="divider"></span>
 {% if user.has_usable_password %}<a href="{% url 'admin:password_change' %}"><span class="material-icons-round" style="font-size:16px;vertical-align:middle;">lock</span> Contraseña</a>{% endif %}
-<a href="{% url 'admin:logout' %}" class="logout-link"><span class="material-icons-round" style="font-size:16px;vertical-align:middle;">logout</span> Salir</a>
+<form method="post" action="{% url 'admin:logout' %}" style="display:inline;">{% csrf_token %}<button type="submit" class="logout-link" style="background:none;border:none;cursor:pointer;font:inherit;padding:0;"><span class="material-icons-round" style="font-size:16px;vertical-align:middle;">logout</span> Cerrar sesión</button></form>
 {% endblock %}
 
 {% block footer %}
+
+<script>
+(function() {
+    function translateAdmin() {
+        // Translate submit buttons
+        document.querySelectorAll('input[name="_save"]').forEach(el => el.value = 'Guardar');
+        document.querySelectorAll('input[name="_addanother"]').forEach(el => el.value = 'Guardar y agregar otro');
+        document.querySelectorAll('input[name="_continue"]').forEach(el => el.value = 'Guardar y continuar editando');
+        
+        // Translate page titles
+        var h1 = document.querySelector('#content h1');
+        if (h1) {
+            h1.textContent = h1.textContent
+                .replace('Add ', 'Agregar ')
+                .replace('Change ', 'Editar ')
+                .replace('Delete ', 'Eliminar ');
+        }
+        
+        // Translate history link
+        document.querySelectorAll('a.historylink').forEach(el => {
+            el.innerHTML = '<span class="material-icons-round" style="font-size:15px;vertical-align:middle;">history</span> Historial';
+        });
+        
+        // Translate delete link
+        document.querySelectorAll('a.deletelink, p.deletelink a').forEach(el => {
+            if (el.textContent.trim() === 'Delete') el.textContent = 'Eliminar';
+        });
+
+        // Translate delete confirmation
+        var delForm = document.querySelector('#content form p');
+        if (delForm && delForm.textContent.includes("Are you sure")) {
+            delForm.textContent = "¿Estás seguro? Los siguientes objetos y sus elementos relacionados serán eliminados:";
+        }
+        document.querySelectorAll('input[name="post"]').forEach(el => {
+    if (el.value.includes("sure")) el.value = "Sí, estoy seguro";
+});
+document.querySelectorAll('.cancel-link').forEach(el => {
+    el.textContent = "No, volver atrás";
+});
+
+        // Translate "Save" button label color fix
+        document.querySelectorAll('.submit-row').forEach(el => {
+            el.style.background = 'white';
+            el.style.borderTop = '1px solid #e5e7eb';
+        });
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', translateAdmin);
+    } else {
+
+
+        translateAdmin();
+    }
+})();
+</script>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     var mod = document.getElementById('recent-actions-module');

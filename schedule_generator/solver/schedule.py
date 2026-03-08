@@ -5,14 +5,14 @@ from .dto.turn import Turn
 from .dto.room import Room
 from .interfaces.constraint_interface import ConstraintInterface
 
-DAYS = 5             # Monday to Friday
+DAYS = 5
 TIME_SLOTS_PER_DAY = 6
 
 # Penalties
-PENALTY_HARD = 1_000_000        # Unfixable violation
-PENALTY_MISSING_TURN = 500      # A class that couldn't be placed
-PENALTY_WRONG_ROOM_TYPE = 200   # Class in wrong room type
-PENALTY_LUNCH_MISSING = 10_000  # Group has no free slot 3 or 4 in a day
+PENALTY_HARD             = 1_000_000
+PENALTY_MISSING_TURN     = 500
+PENALTY_WRONG_ROOM_TYPE  = 50_000   # ← Was 200, now HARD-like: never acceptable
+PENALTY_LUNCH_MISSING    = 10_000
 
 # Activity → required room type
 ACTIVITY_ROOM_TYPE: Dict[str, str] = {
@@ -25,11 +25,7 @@ ACTIVITY_ROOM_TYPE: Dict[str, str] = {
 class Schedule:
     """
     One chromosome in the GA.
-
     The matrix is DAYS x TIME_SLOTS_PER_DAY.
-    Each cell holds a Turn (or an empty Turn).
-    Because a conference can hold 2 groups, a single cell may represent
-    2 groups simultaneously.
     """
 
     def __init__(
@@ -69,10 +65,13 @@ class Schedule:
     def _try_place_turn(self, turn: Turn) -> bool:
         """
         Try to place a turn in a valid slot.
-        For conferences, first try to merge with an existing conference
-        of the same subject/professor before occupying a new slot.
+        Room type match is REQUIRED — only falls back to wrong type if
+        absolutely no correct-type room is available in the whole schedule.
         """
         required_room_type = ACTIVITY_ROOM_TYPE.get(turn.activity_type)
+
+        # Check if a fixed room is required by a ROOM_ASSIGNMENT constraint
+        fixed_room = self._get_fixed_room(turn)
 
         # --- For conferences: try merging first ---
         if turn.activity_type == 'C':
@@ -80,7 +79,6 @@ class Schedule:
                 for t in range(TIME_SLOTS_PER_DAY):
                     existing = self.matrix[d][t]
                     if existing.can_merge_with(turn):
-                        # Check room still fits (same room already assigned)
                         existing.merge(turn)
                         return True
 
@@ -93,10 +91,13 @@ class Schedule:
         ]
         random.shuffle(available_slots)
 
-        # Prefer rooms of the correct type
-        preferred_rooms = [r for r in self.rooms if r.room_type_code == required_room_type]
-        fallback_rooms = [r for r in self.rooms if r.room_type_code != required_room_type]
-        candidate_rooms = preferred_rooms if preferred_rooms else fallback_rooms
+        if fixed_room:
+            # Only try the fixed room
+            candidate_rooms = [fixed_room]
+        else:
+            preferred_rooms = [r for r in self.rooms if r.room_type_code == required_room_type]
+            fallback_rooms  = [r for r in self.rooms if r.room_type_code != required_room_type]
+            candidate_rooms = preferred_rooms if preferred_rooms else fallback_rooms
         random.shuffle(candidate_rooms)
 
         for d, t in available_slots:
@@ -111,26 +112,37 @@ class Schedule:
 
         return False
 
+    def _get_fixed_room(self, turn: Turn) -> Optional[Room]:
+        """
+        If a ROOM_ASSIGNMENT constraint targets this turn's subject+activity_type,
+        return the required Room DTO, else None.
+        """
+        for c in self.constraints:
+            if getattr(c, 'constraint_type', None) != 'ROOM_ASSIGNMENT':
+                continue
+            rule = getattr(c, 'rule_data', {})
+            if rule.get('subject_alias') == turn.subject_alias \
+               and rule.get('activity_type') == turn.activity_type:
+                # Find the room DTO by id
+                room_id = rule.get('room_id')
+                for r in self.rooms:
+                    if str(r.id) == str(room_id):
+                        return r
+        return None
+
     # ------------------------------------------------------------------
     # Conflict detection helpers
     # ------------------------------------------------------------------
 
     def _has_hard_conflict(self, d: int, t: int, turn: Turn) -> bool:
-        """
-        Returns True if placing `turn` at (d, t) would cause a hard conflict:
-        - Same professor already teaching at (d, t) in a non-mergeable way
-        - Same group already has a class at (d, t)
-        """
         existing = self.matrix[d][t]
         if existing.is_empty_slot():
             return False
 
-        # Professor conflict (same professor, different subject/type → hard)
         if turn.professor_id and existing.professor_id == turn.professor_id:
             if not existing.can_merge_with(turn):
                 return True
 
-        # Group conflict: any group in turn already appears at (d, t)
         for gc in turn.group_codes:
             if gc in existing.group_codes:
                 return True
@@ -138,15 +150,13 @@ class Schedule:
         return False
 
     def _room_is_free(self, d: int, t: int, room: Room) -> bool:
-        """Returns True if the given room is not occupied at (d, t)."""
-        for dd in range(DAYS):
-            existing = self.matrix[dd][t] if dd == d else None
-            if existing and not existing.is_empty_slot():
-                if existing.room and existing.room.id == room.id:
-                    # Room occupied — unless it's a conference with space
-                    if existing.activity_type == 'C' and len(existing.group_codes) < 2:
-                        continue  # Still has room for one more group
-                    return False
+        existing = self.matrix[d][t]
+        if existing.is_empty_slot():
+            return True
+        if existing.room and existing.room.id == room.id:
+            if existing.activity_type == 'C' and len(existing.group_codes) < 2:
+                return True
+            return False
         return True
 
     # ------------------------------------------------------------------
@@ -156,10 +166,10 @@ class Schedule:
     def calculate_score(self) -> None:
         self.score = 0
 
-        # 1. Penalty for unplaced turns
+        # 1. Unplaced turns
         self.score += len(self.unscheduled_load) * PENALTY_MISSING_TURN
 
-        # 2. Evaluate placed turns
+        # 2. Placed turns
         for d in range(DAYS):
             for t in range(TIME_SLOTS_PER_DAY):
                 turn = self.matrix[d][t]
@@ -169,7 +179,7 @@ class Schedule:
                 for constraint in self.constraints:
                     self.score += constraint.evaluate(turn, d, t)
 
-        # 3. Lunch break: every group must have slot 3 (index 2) OR slot 4 (index 3) free each day
+        # 3. Lunch break
         self.score += self._penalty_lunch_break()
 
     def _penalty_wrong_room_type(self, turn: Turn) -> int:
@@ -179,12 +189,7 @@ class Schedule:
         return 0
 
     def _penalty_lunch_break(self) -> int:
-        """
-        For each group, for each day, at least one of slots 3 or 4 (index 2 or 3)
-        must be free.
-        """
         penalty = 0
-        # Collect all group codes present in the schedule
         all_groups = set()
         for d in range(DAYS):
             for t in range(TIME_SLOTS_PER_DAY):
@@ -206,14 +211,12 @@ class Schedule:
     # ------------------------------------------------------------------
 
     def fusion(self, partner_matrix: List[List[Turn]]) -> None:
-        """Uniform crossover: each cell has 50% chance of coming from partner."""
         for d in range(DAYS):
             for t in range(TIME_SLOTS_PER_DAY):
                 if random.random() < 0.5:
                     self.matrix[d][t] = copy.deepcopy(partner_matrix[d][t])
 
     def mutate(self) -> None:
-        """Swap two randomly chosen occupied slots."""
         occupied = [
             (d, t)
             for d in range(DAYS)
@@ -238,12 +241,7 @@ class Schedule:
         return self.score == 0
 
     def split_by_group(self) -> Dict[str, List[List[Optional[Turn]]]]:
-        """
-        Returns a dict: group_code → 5×6 matrix with only that group's turns.
-        Useful for persisting individual group schedules.
-        """
         result: Dict[str, List[List[Optional[Turn]]]] = {}
-
         for d in range(DAYS):
             for t in range(TIME_SLOTS_PER_DAY):
                 turn = self.matrix[d][t]
@@ -253,5 +251,4 @@ class Schedule:
                     if gc not in result:
                         result[gc] = [[None] * TIME_SLOTS_PER_DAY for _ in range(DAYS)]
                     result[gc][d][t] = turn
-
         return result

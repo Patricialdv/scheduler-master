@@ -162,6 +162,7 @@ class Constraint(models.Model):
     class ConstraintType(models.TextChoices):
         UNAVAILABILITY = 'UNAVAILABILITY', 'Indisponibilidad temporal'
         TIME_SLOT_PREFERENCE = 'TIME_SLOT_PREFERENCE', 'Preferencia de franja horaria'
+        ROOM_ASSIGNMENT = 'ROOM_ASSIGNMENT', 'Asignación fija de local'
 
     class TargetType(models.TextChoices):
         PROFESSOR = 'PROFESSOR', 'Profesor'

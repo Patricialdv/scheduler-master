@@ -68,22 +68,43 @@ def _map_turns(period: Period) -> List[TurnDTO]:
 
 def _map_constraints(period: Period) -> List[ConstraintInterface]:
     """
-    Load active Constraint objects for this period and convert them to
+    Load active Constraint objects relevant to this period and convert them to
     ConstraintInterface instances the GA can evaluate.
 
-    Currently supports:
+    Supports:
         UNAVAILABILITY       → UnavailabilityConstraint
         TIME_SLOT_PREFERENCE → TimeSlotPreferenceConstraint
+        ROOM_ASSIGNMENT      → RoomAssignmentConstraint
     """
     from .solver.constraints.unavailability import UnavailabilityConstraint
     from .solver.constraints.time_slot_preference import TimeSlotPreferenceConstraint
+    from .solver.constraints.room_assignment import RoomAssignmentConstraint
 
+    # Only load constraints whose target belongs to this period
+    period_professor_ids = list(
+        TeachingActivityAssignment.objects
+        .filter(subject__period=period)
+        .values_list('professor_id', flat=True)
+        .distinct()
+    )
+    period_group_ids = list(
+        period.groups.values_list('id', flat=True)
+    )
+    period_subject_ids = list(
+        period.subjects.values_list('id', flat=True)
+    )
+
+    from django.db.models import Q
     active_constraints = (
         Constraint.objects
         .filter(is_active=True)
-        .prefetch_related('schedules')
-        # Filter to constraints relevant to this period's groups/subjects/professors/rooms
-        # (All active constraints are loaded; the evaluate() method checks target match)
+        .filter(
+            Q(professor_id__in=period_professor_ids) |
+            Q(group_id__in=period_group_ids) |
+            Q(subject_id__in=period_subject_ids) |
+            Q(room__isnull=False)   # Room constraints apply globally
+        )
+        .prefetch_related('schedules', 'subject', 'professor', 'group', 'room')
     )
 
     result: List[ConstraintInterface] = []
@@ -93,6 +114,8 @@ def _map_constraints(period: Period) -> List[ConstraintInterface]:
             result.append(UnavailabilityConstraint(c, schedules))
         elif c.constraint_type == Constraint.ConstraintType.TIME_SLOT_PREFERENCE:
             result.append(TimeSlotPreferenceConstraint(c, schedules))
+        elif c.constraint_type == 'ROOM_ASSIGNMENT':
+            result.append(RoomAssignmentConstraint(c, schedules))
 
     return result
 

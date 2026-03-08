@@ -11,6 +11,7 @@ urlpatterns = [
     path('accounts/login/',
         auth_views.LoginView.as_view(template_name='admin/login.html'),
         name='login'),
+    path('accounts/logout/', auth_views.LogoutView.as_view(next_page='/accounts/login/'), name='logout'),
     path('accounts/', include('django.contrib.auth.urls')),
     path('schedule/', schedule_selector, name='schedule_selector'),
     path('schedule/view/', view_schedule, name='view_schedule'),
@@ -20,8 +21,6 @@ urlpatterns = [
 from django.contrib import admin
 admin.site.site_header = 'SGGAH'
 admin.site.site_title = 'SGGAH'
-admin.site.index_title = 'Panel de Administración'
-admin.site.site_title = 'UCI Scheduler'
 admin.site.index_title = 'Panel de Administración'
 
 

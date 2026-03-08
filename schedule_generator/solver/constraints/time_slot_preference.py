@@ -6,18 +6,11 @@ from typing import List, Any
 from ..interfaces.constraint_interface import ConstraintInterface
 from ..dto.turn import Turn
 
-MORNING_SLOTS = {0, 1, 2}    # slots 1-3
-AFTERNOON_SLOTS = {3, 4, 5}  # slots 4-6
+MORNING_SLOTS   = {0, 1, 2}
+AFTERNOON_SLOTS = {3, 4, 5}
 
 
 class TimeSlotPreferenceConstraint(ConstraintInterface):
-    """
-    Penalizes turns placed in the wrong time-of-day.
-
-    Supports target_type: PROFESSOR, GROUP, SUBJECT.
-    rule_data:
-        time_of_day: 'MORNING' | 'AFTERNOON'
-    """
 
     def __init__(self, orm_constraint: Any, orm_schedules: List[Any]):
         super().__init__(
@@ -25,10 +18,9 @@ class TimeSlotPreferenceConstraint(ConstraintInterface):
             rule_data={},
             priority=orm_constraint.priority,
         )
-        self.target_type = orm_constraint.target_type
-        self.target_id = self._resolve_target_id(orm_constraint)
-
-        # Determine preferred and forbidden slot sets from schedules
+        self.target_type   = orm_constraint.target_type
+        self.target_id     = self._resolve_target_id(orm_constraint)
+        self.subject_alias = self._resolve_subject_alias(orm_constraint)
         self.forbidden_slots = self._compute_forbidden_slots(orm_schedules)
 
     def _resolve_target_id(self, c: Any):
@@ -40,16 +32,19 @@ class TimeSlotPreferenceConstraint(ConstraintInterface):
             return c.subject.id
         return None
 
+    def _resolve_subject_alias(self, c: Any):
+        if c.target_type == 'SUBJECT' and c.subject:
+            return c.subject.alias or c.subject.name
+        return None
+
     def _compute_forbidden_slots(self, schedules: List[Any]) -> set:
         forbidden = set()
         for s in schedules:
             if not s.time_of_day:
                 continue
             if s.time_of_day == 'MORNING':
-                # Preference is MORNING → afternoon slots are forbidden
                 forbidden.update(AFTERNOON_SLOTS)
             elif s.time_of_day == 'AFTERNOON':
-                # Preference is AFTERNOON → morning slots are forbidden
                 forbidden.update(MORNING_SLOTS)
         return forbidden
 
@@ -66,6 +61,7 @@ class TimeSlotPreferenceConstraint(ConstraintInterface):
             if str(self.target_id) not in [str(gc) for gc in turn.group_codes]:
                 return 0
         elif self.target_type == 'SUBJECT':
-            return 0  # Needs alias→id resolution (future improvement)
+            if not self.subject_alias or turn.subject_alias != self.subject_alias:
+                return 0
 
         return self.penalty_base
