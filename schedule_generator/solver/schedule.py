@@ -103,6 +103,19 @@ class Schedule:
         for d, t in available_slots:
             if self._has_hard_conflict(d, t, turn):
                 continue
+            if self._violates_constraints(d, t, turn):
+                continue
+            for room in candidate_rooms:
+                if self._room_is_free(d, t, room):
+                    placed_turn = copy.deepcopy(turn)
+                    placed_turn.room = room
+                    self.matrix[d][t] = placed_turn
+                    return True
+
+        # Second pass: relax constraint check (place anyway to avoid unscheduled turns)
+        for d, t in available_slots:
+            if self._has_hard_conflict(d, t, turn):
+                continue
             for room in candidate_rooms:
                 if self._room_is_free(d, t, room):
                     placed_turn = copy.deepcopy(turn)
@@ -133,6 +146,22 @@ class Schedule:
     # ------------------------------------------------------------------
     # Conflict detection helpers
     # ------------------------------------------------------------------
+
+    def _violates_constraints(self, d: int, t: int, turn: Turn) -> bool:
+        """
+        Returns True if placing this turn at (d, t) would violate any
+        UNAVAILABILITY or TIME_SLOT_PREFERENCE constraint with priority >= 3.
+        Used during initialization to prefer constraint-safe slots.
+        """
+        for c in self.constraints:
+            ctype = getattr(c, 'constraint_type', None)
+            if ctype not in ('UNAVAILABILITY', 'TIME_SLOT_PREFERENCE'):
+                continue
+            if getattr(c, 'priority', 0) < 3:
+                continue
+            if c.evaluate(turn, d, t) > 0:
+                return True
+        return False
 
     def _has_hard_conflict(self, d: int, t: int, turn: Turn) -> bool:
         existing = self.matrix[d][t]

@@ -14,8 +14,8 @@ echo.
 echo Presiona cualquier tecla para ver logs...
 echo.
 echo Credenciales PGAdmin:
-echo Email: superuser-admin@scheduler.com
-echo Password: scheduler-dev-password-DO_NOT_TOUCH_4001
+echo Email: admin@admin.com
+echo Password: admin123
 echo.
 echo Presiona cualquier tecla para ver logs...
 pause

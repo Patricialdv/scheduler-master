@@ -18,10 +18,10 @@ class ScheduleCreator:
     schedule.split_by_group().
     """
 
-    POPULATION_SIZE = 20    # Small for testing — increase to 200+ for production
-    MAX_EPOCHS = 50         # Small for testing — increase to 500+ for production
-    ELITE_SIZE = 5
-    MUTATION_RATE = 0.05
+    POPULATION_SIZE = 100
+    MAX_EPOCHS = 300
+    ELITE_SIZE = 10
+    MUTATION_RATE = 0.10
 
     def __init__(
         self,

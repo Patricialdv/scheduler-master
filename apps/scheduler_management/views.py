@@ -32,11 +32,6 @@ DAY_LABELS = {0: 'Lunes', 1: 'Martes', 2: 'Miércoles', 3: 'Jueves', 4: 'Viernes
 # ---------------------------------------------------------------------------
 
 def _get_week_choices(period):
-    """
-    Returns a list of dicts for the week selector:
-        [{ 'number': 1, 'label': 'Semana 1: 2 mar - 6 mar', 'monday': date }, ...]
-    Includes week 0 = base schedule.
-    """
     choices = [{'number': 0, 'label': 'Horario Base (patrón general)', 'monday': None}]
 
     if not period.start_date:
@@ -80,7 +75,6 @@ def _get_or_create_week_academic_days(period, week_monday):
     week_days = {}
     for d in range(DAYS):
         day_date = week_monday + timedelta(days=d)
-        # Derive week number from position relative to period start
         delta = (week_monday - period.start_date).days // 7 + 1
         academic_day, _ = AcademicDay.objects.get_or_create(
             period=period, date=day_date,
@@ -186,23 +180,20 @@ def _result_to_display_groups(result):
                     })
                 else:
                     row['cells'].append({'empty': True})
-            rows.append(row)
+        rows.append(row)
         display_groups.append({'group_code': group_code, 'rows': rows})
 
     return display_groups
 
 
 def _db_schedule_to_display_groups(period, week_monday):
-    """
-    Load an already-persisted weekly schedule from the DB and build display context.
-    """
+    """Load an already-persisted weekly schedule from the DB and build display context."""
     from datetime import date
     prof_map = {str(p.id): p.full_name for p in Professor.objects.all()}
     display_groups = []
 
     groups = Group.objects.filter(period=period)
     for group in groups:
-        # Find the AcademicDay that is the Monday of this week
         monday_day = AcademicDay.objects.filter(period=period, date=week_monday).first()
         if not monday_day:
             continue
@@ -215,8 +206,6 @@ def _db_schedule_to_display_groups(period, week_monday):
         if not schedule:
             continue
 
-        # Build 6×5 matrix
-        matrix = [[None] * DAYS for _ in range(TIME_SLOTS_PER_DAY)]
         time_slots = TimeSlot.objects.filter(schedule=schedule).select_related(
             'academic_day'
         ).prefetch_related(
@@ -258,13 +247,65 @@ def _db_schedule_to_display_groups(period, week_monday):
     return display_groups
 
 
+def _db_base_schedule_to_display_groups(period):
+    """Load the base schedule from DB and build display context."""
+    prof_map = {str(p.id): p.full_name for p in Professor.objects.all()}
+    display_groups = []
+
+    groups = Group.objects.filter(period=period)
+    for group in groups:
+        schedule = Schedule.objects.filter(
+            period=period, group=group, is_base=True
+        ).first()
+        if not schedule:
+            continue
+
+        time_slots = TimeSlot.objects.filter(schedule=schedule).prefetch_related(
+            'assignedevent_set__docent_event__professor',
+            'assignedevent_set__docent_event__activity__subject',
+            'assignedevent_set__docent_event__room',
+        )
+
+        rows = []
+        for t in range(TIME_SLOTS_PER_DAY):
+            row = {'slot_label': SLOT_LABELS[t], 'slot_index': t + 1, 'cells': []}
+            for d in range(DAYS):
+                ts = time_slots.filter(slot_index=t + 1).filter(
+                    academic_day__academic_week_number=0
+                ).filter(academic_day__date__week_day=d + 2).first()
+                if ts:
+                    ae = ts.assignedevent_set.filter(docent_event__isnull=False).first()
+                    if ae and ae.docent_event:
+                        de = ae.docent_event
+                        row['cells'].append({
+                            'empty': False,
+                            'subject': de.activity.subject.alias or de.activity.subject.name if de.activity else 'N/A',
+                            'activity_type': _normalize_activity_type(de.activity.activity_type) if de.activity else '',
+                            'groups': group.group_code,
+                            'professor_name': de.professor.full_name if de.professor else 'N/A',
+                            'room': de.room.room_code if de.room else 'N/A',
+                        })
+                    else:
+                        row['cells'].append({'empty': True})
+                else:
+                    row['cells'].append({'empty': True})
+            rows.append(row)
+
+        display_groups.append({'group_code': group.group_code, 'rows': rows})
+
+    return display_groups
+
+
 # ---------------------------------------------------------------------------
 # Views
 # ---------------------------------------------------------------------------
 
 @login_required
 def schedule_selector(request):
-    """Step 1: Show period + week selector."""
+    """Step 1: Ensure all active periods have schedules, then show selector."""
+    from .schedule_service import ensure_all_active_periods
+    generation_errors = ensure_all_active_periods()
+
     periods = Period.objects.filter(is_active=True).order_by('career', 'number')
 
     selected_period_id = request.GET.get('period_id')
@@ -283,12 +324,13 @@ def schedule_selector(request):
         'periods': periods,
         'selected_period': selected_period,
         'week_choices': week_choices,
+        'generation_errors': generation_errors,
     })
 
 
 @login_required
 def view_schedule(request):
-    """Step 2: Generate (if needed) and display the selected schedule."""
+    """Step 2: Display the selected schedule (always read from DB)."""
     period_id = request.GET.get('period_id')
     week_number = request.GET.get('week_number', '0')
 
@@ -305,22 +347,20 @@ def view_schedule(request):
         })
 
     try:
-        # --- BASE SCHEDULE ---
-        if week_number == 0:
-            result = generate_schedule_for_period(period_id=period.id)
-            _persist_schedule(period, result, is_base=True)
-            display_groups = _result_to_display_groups(result)
-            week_label = 'Horario Base'
-            score = result.base_schedule.get_score()
-            is_perfect = result.base_schedule.is_perfect()
+        week_choices = _get_week_choices(period)
 
-        # --- WEEKLY SCHEDULE ---
+        if week_number == 0:
+            display_groups = _db_base_schedule_to_display_groups(period)
+            week_label = 'Horario Base'
+            base_sched = Schedule.objects.filter(period=period, is_base=True).first()
+            score = base_sched.score if base_sched else 0
+            is_perfect = score == 0
+
         else:
             if not period.start_date:
                 return render(request, 'schedule/error.html', {
                     'error_message': 'El período no tiene fecha de inicio definida.'
                 })
-
             monday = period.start_date - timedelta(days=period.start_date.weekday())
             week_monday = monday + timedelta(weeks=week_number - 1)
             week_friday = week_monday + timedelta(days=4)
@@ -328,49 +368,13 @@ def view_schedule(request):
                 f'Semana {week_number}: '
                 f'{week_monday.strftime("%#d %b")} - {week_friday.strftime("%#d %b")}'
             )
-
-            # Check if already generated
+            display_groups = _db_schedule_to_display_groups(period, week_monday)
             monday_day = AcademicDay.objects.filter(period=period, date=week_monday).first()
-            already_generated = (
-                monday_day and
-                Schedule.objects.filter(
-                    period=period, is_base=False, academic_week=monday_day
-                ).exists()
-            )
-
-            if already_generated:
-                display_groups = _db_schedule_to_display_groups(period, week_monday)
-                score = Schedule.objects.filter(
-                    period=period, is_base=False, academic_week=monday_day
-                ).first().score
-                is_perfect = score == 0
-            else:
-                # Generate weekly override from base
-                from schedule_generator.main import _map_rooms, _map_turns, _map_constraints
-                from schedule_generator.solver.schedule_manager import ScheduleManager
-
-                rooms = _map_rooms(period)
-                turns = _map_turns(period)
-                constraints = _map_constraints(period)
-
-                manager = ScheduleManager(
-                    rooms=rooms,
-                    all_turns=turns,
-                    constraints=constraints,
-                )
-
-                # Get base schedule DTO if it exists
-                base_orm = Schedule.objects.filter(
-                    period=period, is_base=True
-                ).first()
-
-                result = manager.generate()
-                _persist_schedule(period, result, is_base=False, academic_week_day=week_monday)
-                display_groups = _result_to_display_groups(result)
-                score = result.base_schedule.get_score()
-                is_perfect = result.base_schedule.is_perfect()
-
-        week_choices = _get_week_choices(period)
+            sched = Schedule.objects.filter(
+                period=period, is_base=False, academic_week=monday_day
+            ).first() if monday_day else None
+            score = sched.score if sched else 0
+            is_perfect = score == 0
 
         return render(request, 'schedule/schedule_display.html', {
             'period': period,

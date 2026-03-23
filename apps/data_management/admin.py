@@ -463,3 +463,109 @@ class CustomGroupAdmin(AuthGroupAdmin):
 
 django_admin.site.register(User, CustomUserAdmin)
 django_admin.site.register(AuthGroup, CustomGroupAdmin)
+
+
+# ---------------------------------------------------------------------------
+# Signals — automatic schedule regeneration on admin changes
+# ---------------------------------------------------------------------------
+
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
+
+
+def _run_regen(func, *args, **kwargs):
+    """Run a regeneration function and log errors without crashing."""
+    import logging
+    log = logging.getLogger(__name__)
+    try:
+        errors = func(*args, **kwargs)
+        for e in errors:
+            log.error(f'[signal regen] {e}')
+    except Exception as e:
+        log.error(f'[signal regen] Unexpected error: {e}')
+
+
+@receiver([post_save, post_delete], sender=Room)
+def on_room_change(sender, instance, **kwargs):
+    """Room change affects all active periods."""
+    from apps.scheduler_management.schedule_service import regenerate_all_active_periods
+    _run_regen(regenerate_all_active_periods)
+
+
+@receiver([post_save, post_delete], sender=TeachingActivityAssignment)
+def on_assignment_change(sender, instance, **kwargs):
+    """Assignment change affects its period."""
+    from apps.scheduler_management.schedule_service import regenerate_period
+    try:
+        period = instance.subject.period
+        if period.is_active:
+            _run_regen(regenerate_period, period)
+    except Exception:
+        pass
+
+
+@receiver([post_save, post_delete], sender=Group)
+def on_group_change(sender, instance, **kwargs):
+    """Group change affects its period."""
+    from apps.scheduler_management.schedule_service import regenerate_period
+    try:
+        period = instance.period
+        if period and period.is_active:
+            _run_regen(regenerate_period, period)
+    except Exception:
+        pass
+
+
+@receiver([post_save, post_delete], sender=Subject)
+def on_subject_change(sender, instance, **kwargs):
+    """Subject change affects its period."""
+    from apps.scheduler_management.schedule_service import regenerate_period
+    try:
+        period = instance.period
+        if period and period.is_active:
+            _run_regen(regenerate_period, period)
+    except Exception:
+        pass
+
+
+@receiver([post_save, post_delete], sender=Constraint)
+def on_constraint_change(sender, instance, **kwargs):
+    """Constraint change: regenerate affected periods from earliest affected week."""
+    from apps.scheduler_management.schedule_service import (
+        get_affected_periods_from_constraint,
+        get_earliest_week_from_constraint,
+        regenerate_from_week,
+    )
+    try:
+        periods = get_affected_periods_from_constraint(instance)
+        from_week = get_earliest_week_from_constraint(instance)
+        for period in periods:
+            _run_regen(regenerate_from_week, period, from_week)
+    except Exception:
+        pass
+
+
+@receiver([post_save, post_delete], sender=ConstraintSchedule)
+def on_constraint_schedule_change(sender, instance, **kwargs):
+    """ConstraintSchedule change: same logic as its parent Constraint."""
+    from apps.scheduler_management.schedule_service import (
+        get_affected_periods_from_constraint,
+        get_earliest_week_from_constraint,
+        regenerate_from_week,
+    )
+    try:
+        constraint = instance.constraint
+        periods = get_affected_periods_from_constraint(constraint)
+        from_week = get_earliest_week_from_constraint(constraint)
+        for period in periods:
+            _run_regen(regenerate_from_week, period, from_week)
+    except Exception:
+        pass
+
+
+@receiver(post_save, sender=Period)
+def on_period_change(sender, instance, **kwargs):
+    """If a period becomes active, ensure it has a schedule."""
+    if instance.is_active:
+        from apps.scheduler_management.schedule_service import ensure_all_active_periods
+        _run_regen(ensure_all_active_periods)
