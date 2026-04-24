@@ -44,8 +44,9 @@ class Turn:
 
     def can_merge_with(self, other: 'Turn') -> bool:
         """
-        Returns True if another conference Turn can share this slot
-        (same subject, same professor, same activity type=C, and room has space).
+        Permite fusionar conferencias de la misma materia aunque tengan
+        distintos profesores (modelo cubano: todos los grupos asisten juntos).
+        Límite: máximo 3 grupos por celda.
         """
         return (
             not self.is_empty
@@ -53,8 +54,7 @@ class Turn:
             and self.activity_type == 'C'
             and other.activity_type == 'C'
             and self.subject_alias == other.subject_alias
-            and self.professor_id == other.professor_id
-            and len(self.group_codes) < 2
+            and len(self.group_codes) < 3
         )
 
     def merge(self, other: 'Turn') -> None:

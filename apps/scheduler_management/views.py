@@ -1,5 +1,6 @@
 import uuid
 from datetime import timedelta
+from django.db import models
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 
@@ -55,7 +56,8 @@ def _get_or_create_base_academic_days(period):
     """5 virtual AcademicDays (week_number=0) for the base schedule."""
     base_days = {}
     if period.start_date:
-        monday = period.start_date - timedelta(days=period.start_date.weekday())
+        first_week_monday = period.start_date - timedelta(days=period.start_date.weekday())
+        monday = first_week_monday - timedelta(days=7)
     else:
         from datetime import date
         monday = date(2000, 1, 3)
@@ -64,7 +66,7 @@ def _get_or_create_base_academic_days(period):
         day_date = monday + timedelta(days=d)
         academic_day, _ = AcademicDay.objects.get_or_create(
             period=period, date=day_date,
-            defaults={'is_active': True, 'academic_week_number': 0}
+            defaults={'is_active': True, 'academic_week_number': None}
         )
         base_days[d] = academic_day
     return base_days
@@ -180,7 +182,7 @@ def _result_to_display_groups(result):
                     })
                 else:
                     row['cells'].append({'empty': True})
-        rows.append(row)
+            rows.append(row)
         display_groups.append({'group_code': group_code, 'rows': rows})
 
     return display_groups
@@ -270,6 +272,7 @@ def _db_base_schedule_to_display_groups(period):
         for t in range(TIME_SLOTS_PER_DAY):
             row = {'slot_label': SLOT_LABELS[t], 'slot_index': t + 1, 'cells': []}
             for d in range(DAYS):
+                # Use weekday() directly: Monday=0, Tuesday=1, ..., Friday=4
                 ts = time_slots.filter(slot_index=t + 1).filter(
                     academic_day__academic_week_number=0
                 ).filter(academic_day__date__week_day=d + 2).first()
@@ -302,11 +305,53 @@ def _db_base_schedule_to_display_groups(period):
 
 @login_required
 def schedule_selector(request):
-    """Step 1: Ensure all active periods have schedules, then show selector."""
-    from .schedule_service import ensure_all_active_periods
-    generation_errors = ensure_all_active_periods()
+    """
+    Muestra el selector de horarios sin bloquear el request con generación.
+    La generación se hace manualmente via manage.py generate_schedules.
+    """
+    from django.db.models import Exists, OuterRef, Count, Q
+    from apps.data_management.models import Schedule, TeachingActivityAssignment
+    generation_errors = []
 
-    periods = Period.objects.filter(is_active=True).order_by('career', 'number')
+    # Subquery para verificar si el período tiene un Schedule base generado (con score > 0)
+    schedule_exists = Schedule.objects.filter(
+        period=OuterRef('pk'),
+        is_base=True
+    )
+
+    # Subquery para verificar si el período tiene TeachingActivityAssignments
+    assignments_exist = TeachingActivityAssignment.objects.filter(
+        subject__period=OuterRef('pk')
+    )
+
+    # Períodos activos = is_active=True Y número par (2,4,6,8,10)
+    # Mostrar todos los períodos activos, indicando estado de generación
+    periods = (
+        Period.objects
+        .filter(is_active=True)
+        .annotate(
+            has_schedule=Exists(schedule_exists),
+            has_assignments=Exists(assignments_exist),
+            # Obtener el score del schedule base para verificar si está generado
+            schedule_score=Count(
+                'schedule',
+                filter=Q(schedule__is_base=True, schedule__score__gt=0, schedule__score__lte=200000)
+            ),
+            # Contar schedules con eventos (generados correctamente)
+            has_generated_schedule=Exists(
+                Schedule.objects.filter(
+                    period=OuterRef('pk'),
+                    is_base=True,
+                    score__gte=0,
+                    score__lte=200000
+                ).filter(
+                    Exists(AssignedEvent.objects.filter(time_slot__schedule=OuterRef('pk')))
+                )
+            )
+        )
+        .filter(has_assignments=True)  # Solo mostrar períodos con actividades asignadas
+        .order_by('career', 'number')
+    )
 
     selected_period_id = request.GET.get('period_id')
     selected_period = None
@@ -330,7 +375,19 @@ def schedule_selector(request):
 
 @login_required
 def view_schedule(request):
-    """Step 2: Display the selected schedule (always read from DB)."""
+    """
+    Muestra el horario seleccionado. Generación lazy:
+    - Si el horario base del período no existe → lo genera.
+    - Si la semana específica no existe → la genera a partir del base.
+    - Si ya existe → lo muestra directamente desde la BD.
+    """
+    from apps.scheduler_management.schedule_service import (
+        _generate_base_for_period,
+        _persist_weekly_from_base,
+        _base_schedule_has_timeslots,
+        _weekly_schedule_exists,
+    )
+
     period_id = request.GET.get('period_id')
     week_number = request.GET.get('week_number', '0')
 
@@ -349,7 +406,12 @@ def view_schedule(request):
     try:
         week_choices = _get_week_choices(period)
 
+        # ── Garantizar que el horario BASE existe ──────────────────────
+        if not _base_schedule_has_timeslots(period):
+            _generate_base_for_period(period)
+
         if week_number == 0:
+            # Horario base
             display_groups = _db_base_schedule_to_display_groups(period)
             week_label = 'Horario Base'
             base_sched = Schedule.objects.filter(period=period, is_base=True).first()
@@ -357,10 +419,12 @@ def view_schedule(request):
             is_perfect = score == 0
 
         else:
+            # ── Semana específica ──────────────────────────────────────
             if not period.start_date:
                 return render(request, 'schedule/error.html', {
                     'error_message': 'El período no tiene fecha de inicio definida.'
                 })
+
             monday = period.start_date - timedelta(days=period.start_date.weekday())
             week_monday = monday + timedelta(weeks=week_number - 1)
             week_friday = week_monday + timedelta(days=4)
@@ -368,6 +432,11 @@ def view_schedule(request):
                 f'Semana {week_number}: '
                 f'{week_monday.strftime("%#d %b")} - {week_friday.strftime("%#d %b")}'
             )
+
+            # Generar semana si no existe aún
+            if not _weekly_schedule_exists(period, week_monday):
+                _persist_weekly_from_base(period, week_monday, week_number)
+
             display_groups = _db_schedule_to_display_groups(period, week_monday)
             monday_day = AcademicDay.objects.filter(period=period, date=week_monday).first()
             sched = Schedule.objects.filter(

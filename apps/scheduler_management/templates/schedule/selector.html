@@ -75,8 +75,9 @@
                     <option value="{{ period.id }}"
                         data-weeks="{{ period.weeks_count }}"
                         data-start="{{ period.start_date|date:'Y-m-d' }}"
+                        data-schedule-score="{{ period.schedule_score }}"
                         {% if selected_period and selected_period.id == period.id %}selected{% endif %}>
-                        {{ period }}
+                        {{ period }}{% if period.schedule_score == 0 %} ⚠️{% endif %}
                     </option>
                 {% endfor %}
             </select>
@@ -99,7 +100,7 @@
         {% else %}
         <div class="no-periods">
             <span class="material-icons-round">error_outline</span>
-            No hay períodos activos. Activa uno desde el panel de administración.
+            Este período no se encuentra activo o no tiene actividades asignadas.
         </div>
         {% endif %}
     </div>
@@ -109,8 +110,25 @@ function updateWeeks(selectEl) {
     const option = selectEl.options[selectEl.selectedIndex];
     const weeksCount = parseInt(option.dataset.weeks) || 16;
     const startStr = option.dataset.start;
+    const scheduleScore = parseInt(option.dataset.scheduleScore) || 0;
     const weekSelect = document.getElementById('week_number');
     weekSelect.innerHTML = '';
+    
+    // Mostrar advertencia si el schedule no ha sido generado (score=0)
+    const warningEl = document.getElementById('schedule-warning');
+    if (scheduleScore === 0) {
+        if (!warningEl) {
+            const warn = document.createElement('div');
+            warn.id = 'schedule-warning';
+            warn.className = 'no-periods';
+            warn.style.marginBottom = '20px';
+            warn.innerHTML = '<span class="material-icons-round">warning</span> Horario pendiente de generación - seleccione una semana para generar';
+            weekSelect.parentNode.insertBefore(warn, weekSelect);
+        }
+    } else if (warningEl) {
+        warningEl.remove();
+    }
+    
     const baseOpt = document.createElement('option');
     baseOpt.value = '0';
     baseOpt.textContent = 'Horario Base (patrón general)';
@@ -130,6 +148,12 @@ function updateWeeks(selectEl) {
         weekSelect.appendChild(opt);
     }
 }
+
+// Verificar período seleccionado al cargar la página
+document.addEventListener('DOMContentLoaded', function() {
+    const periodSelect = document.getElementById('period_id');
+    if (periodSelect) updateWeeks(periodSelect);
+});
 </script>
 </body>
 </html>

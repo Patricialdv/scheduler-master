@@ -22,6 +22,7 @@ from apps.data_management.models import (
 from schedule_generator.main import (
     generate_schedule_for_period, _map_rooms, _map_turns, _map_constraints,
 )
+from schedule_generator.solver import schedule
 from schedule_generator.solver.schedule_manager import ScheduleManager
 from schedule_generator.solver.schedule import DAYS, TIME_SLOTS_PER_DAY
 
@@ -36,6 +37,228 @@ SLOT_LABELS = {
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+def _base_schedule_has_timeslots(period: Period) -> bool:
+    """
+    Devuelve True solo si el período tiene horario base con timeslots
+    Y esos timeslots tienen AssignedEvents (es decir, fue persistido correctamente).
+    """
+    base = Schedule.objects.filter(period=period, is_base=True).first()
+    if not base:
+        return False
+    ts = TimeSlot.objects.filter(schedule=base).first()
+    if not ts:
+        return False
+    return AssignedEvent.objects.filter(time_slot__schedule=base).exists()
+
+
+def _weekly_schedule_exists(period: Period, week_monday) -> bool:
+    """Devuelve True si ya existe el horario de la semana que empieza en week_monday."""
+    monday_day = AcademicDay.objects.filter(period=period, date=week_monday).first()
+    if not monday_day:
+        return False
+    sched = Schedule.objects.filter(
+        period=period, is_base=False, academic_week=monday_day
+    ).first()
+    if not sched:
+        return False
+    return TimeSlot.objects.filter(schedule=sched).exists()
+
+
+def _persist_weekly_from_base(period: Period, week_monday, week_number: int):
+    """
+    Genera el horario de una semana específica a partir del horario base.
+
+    Si existen restricciones activas para esa semana (UNAVAILABILITY, etc.),
+    re-ejecuta el GA seeded desde el base con esas restricciones aplicadas.
+    Si no hay restricciones específicas, copia el patrón del base directamente.
+    """
+    from datetime import date as date_type
+
+    base_schedules = list(Schedule.objects.filter(period=period, is_base=True))
+    if not base_schedules:
+        raise ValueError(f"No hay horario base para {period}.")
+
+    # Crear / recuperar los AcademicDays de esta semana
+    week_days = {}
+    for d in range(DAYS):
+        day_date = week_monday + timedelta(days=d)
+        academic_day, _ = AcademicDay.objects.get_or_create(
+            period=period,
+            date=day_date,
+            defaults={'is_active': True, 'academic_week_number': week_number},
+        )
+        week_days[d] = academic_day
+
+    monday_academic_day = week_days[0]
+
+    # Verificar si hay restricciones específicas para esta semana
+    week_constraints = _get_week_specific_constraints(period, week_number)
+    has_week_constraints = len(week_constraints) > 0
+
+    if has_week_constraints:
+        log.info(
+            '[weekly] Semana %d de %s tiene %d restricciones específicas — re-ejecutando GA.',
+            week_number, period, len(week_constraints),
+        )
+        _persist_weekly_via_ga(period, week_monday, week_number, week_days, week_constraints)
+    else:
+        log.info(
+            '[weekly] Semana %d de %s sin restricciones específicas — copiando base.',
+            week_number, period,
+        )
+        _persist_weekly_copy_base(period, base_schedules, week_days, monday_academic_day)
+
+
+def _persist_weekly_copy_base(period, base_schedules, week_days, monday_academic_day):
+    """Copia el patrón base a los AcademicDays de la semana específica."""
+    for base_sched in base_schedules:
+        group = base_sched.group
+
+        # Borrar horario semanal previo si existía
+        Schedule.objects.filter(
+            period=period, group=group,
+            is_base=False, academic_week=monday_academic_day,
+        ).delete()
+
+        weekly_sched = Schedule.objects.create(
+            period=period,
+            group=group,
+            is_base=False,
+            academic_week=monday_academic_day,
+            score=base_sched.score,
+        )
+
+        base_timeslots = TimeSlot.objects.filter(schedule=base_sched).select_related(
+            'academic_day'
+        ).prefetch_related(
+            'assignedevent_set__docent_event__professor',
+            'assignedevent_set__docent_event__activity',
+            'assignedevent_set__docent_event__room',
+        )
+
+        for ts in base_timeslots:
+            weekday = ts.academic_day.date.weekday()  # 0=Lunes … 4=Viernes
+            if weekday >= DAYS:
+                continue
+
+            new_ts = TimeSlot.objects.create(
+                schedule=weekly_sched,
+                academic_day=week_days[weekday],
+                slot_index=ts.slot_index,
+            )
+
+            for ae in ts.assignedevent_set.filter(docent_event__isnull=False):
+                de = ae.docent_event
+                new_de = DocentEvent.objects.create(
+                    professor=de.professor,
+                    activity=de.activity,
+                    room=de.room,
+                )
+                AssignedEvent.objects.create(time_slot=new_ts, docent_event=new_de)
+
+
+def _persist_weekly_via_ga(period, week_monday, week_number, week_days, week_constraints):
+    """Re-ejecuta el GA para la semana, seeded desde el base, con restricciones de esa semana."""
+    rooms       = _map_rooms(period)
+    all_turns   = _map_turns(period)
+    base_constraints  = _map_constraints(period)
+    combined    = base_constraints + week_constraints
+
+    manager = ScheduleManager(rooms=rooms, all_turns=all_turns, constraints=combined)
+
+    # Reconstruir el base Schedule como punto de partida del GA semanal
+    from schedule_generator.solver.schedule import Schedule as ScheduleGA
+    base_sched_obj = ScheduleGA(rooms=rooms, constraints=combined, unscheduled_load=all_turns)
+    weekly_result = manager.generate_weekly_override(
+        week_number=week_number,
+        week_constraints=week_constraints,
+        base_schedule=base_sched_obj,
+    )
+
+    monday_academic_day = week_days[0]
+    group_matrices = weekly_result.split_by_group()
+    score = weekly_result.get_score()
+
+    for group_code, matrix in group_matrices.items():
+        group = Group.objects.filter(group_code=group_code, period=period).first()
+        if not group:
+            continue
+
+        Schedule.objects.filter(
+            period=period, group=group,
+            is_base=False, academic_week=monday_academic_day,
+        ).delete()
+
+        weekly_sched = Schedule.objects.create(
+            period=period, group=group,
+            is_base=False, academic_week=monday_academic_day,
+            score=score,
+        )
+
+        for d in range(DAYS):
+            for t in range(TIME_SLOTS_PER_DAY):
+                turn = matrix[d][t] if matrix[d] else None
+                if turn is None or turn.is_empty_slot():
+                    continue
+
+                assignment = TeachingActivityAssignment.objects.filter(
+                    id__in=turn.source_assignment_ids
+                ).select_related('professor').first()
+                if not assignment:
+                    continue
+
+                time_slot = TimeSlot.objects.create(
+                    schedule=weekly_sched,
+                    academic_day=week_days[d],
+                    slot_index=t + 1,
+                )
+                activity, _ = Activity.objects.get_or_create(
+                    subject=assignment.subject,
+                    activity_type=turn.activity_type,
+                    defaults={'title': f'{assignment.subject.alias or assignment.subject.name} — {turn.activity_type}'},
+                )
+                room_obj = None
+                if turn.room:
+                    room_obj = RoomModel.objects.filter(room_code=turn.room.number).first()
+
+                de = DocentEvent.objects.create(
+                    professor=assignment.professor, activity=activity, room=room_obj,
+                )
+                AssignedEvent.objects.create(time_slot=time_slot, docent_event=de)
+
+
+def _get_week_specific_constraints(period: Period, week_number: int) -> list:
+    """
+    Devuelve las restricciones activas que aplican específicamente a esta semana
+    (WEEK_RANGE o WEEK_LIST) y no a todas las semanas (ALWAYS).
+    """
+    from schedule_generator.main import _map_constraints
+    from apps.data_management.models import Constraint, ConstraintSchedule
+
+    all_constraints = _map_constraints(period)
+    week_specific = []
+
+    # ConstraintSchedules con WEEK_RANGE o WEEK_LIST que incluyan esta semana
+    week_sched_ids = set(
+        ConstraintSchedule.objects.filter(
+            pattern_type__in=['WEEK_RANGE', 'WEEK_LIST']
+        ).filter(
+            week_from__lte=week_number, week_to__gte=week_number
+        ).values_list('constraint_id', flat=True)
+    ) | set(
+        cs.constraint_id
+        for cs in ConstraintSchedule.objects.filter(pattern_type='WEEK_LIST')
+        if week_number in (cs.week_numbers or [])
+    )
+
+    for c in all_constraints:
+        raw = getattr(c, '_constraint', None)
+        if raw and str(raw.id) in {str(i) for i in week_sched_ids}:
+            week_specific.append(c)
+
+    return week_specific
+
 
 def ensure_all_active_periods():
     """
@@ -135,23 +358,23 @@ def _persist_base_schedule(period: Period, result):
                 if turn is None or turn.is_empty_slot():
                     continue
 
-                time_slot = TimeSlot.objects.create(
-                    schedule=schedule,
-                    academic_day=base_days[d],
-                    slot_index=t + 1,
-                )
-
                 assignment = TeachingActivityAssignment.objects.filter(
                     id__in=turn.source_assignment_ids
                 ).select_related('professor').first()
                 if not assignment:
                     continue
 
+                time_slot = TimeSlot.objects.create(
+                    schedule=schedule,
+                    academic_day=base_days[d],
+                    slot_index=t + 1,
+                )
+
                 activity, _ = Activity.objects.get_or_create(
                     subject=assignment.subject,
-                    activity_type=turn.activity_type,
+                    activity_type=assignment.activity_type,
                     defaults={
-                        'title': f'{assignment.subject.alias or assignment.subject.name} — {turn.activity_type}'
+                        'title': f'{assignment.subject.alias or assignment.subject.name} — {assignment.get_activity_type_display()}'
                     }
                 )
 
@@ -171,11 +394,12 @@ def _persist_base_schedule(period: Period, result):
 
 
 def _get_or_create_base_academic_days(period: Period) -> dict:
-    """Get or create 5 virtual AcademicDays (week 0) for the base schedule."""
+    """Get or create 5 virtual AcademicDays (week=0) for the base schedule."""
     from datetime import date
     base_days = {}
     if period.start_date:
-        monday = period.start_date - timedelta(days=period.start_date.weekday())
+        first_week_monday = period.start_date - timedelta(days=period.start_date.weekday())
+        monday = first_week_monday - timedelta(days=7)
     else:
         monday = date(2000, 1, 3)
 

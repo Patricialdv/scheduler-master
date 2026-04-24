@@ -37,7 +37,7 @@ class Period(models.Model):
                 raise ValidationError(
                     {
                         'number': f'El número del período ({self.number}) excede el máximo permitido '
-                                  f'de {total_period_count} para la carrera: {career_name}.'
+                                f'de {total_period_count} para la carrera: {career_name}.'
                     }
                 )
 
@@ -54,7 +54,12 @@ class AcademicDay(models.Model):
     period = models.ForeignKey(Period, on_delete=models.CASCADE, related_name='academic_days')
     date = models.DateField()
     is_active = models.BooleanField(default=True)
-    academic_week_number = models.IntegerField(validators=[MinValueValidator(1)])
+    academic_week_number = models.IntegerField(
+        validators=[MinValueValidator(1)],
+        null=True,
+        blank=True,
+        help_text="None = semana base virtual. 1+ = semanas reales del período."
+    )
     cancellation_reason = models.CharField(max_length=255, blank=True, null=True)
 
     class Meta:
