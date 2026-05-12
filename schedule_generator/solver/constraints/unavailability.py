@@ -26,7 +26,8 @@ class UnavailabilityConstraint(ConstraintInterface):
         if c.target_type == 'ROOM' and c.room:
             return c.room.id
         if c.target_type == 'GROUP' and c.group:
-            return c.group.id
+            # Store group_code (e.g. '4E1') so it matches turn.group_codes
+            return c.group.group_code
         if c.target_type == 'SUBJECT' and c.subject:
             return c.subject.id
         return None

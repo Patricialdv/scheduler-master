@@ -132,19 +132,19 @@ def _map_turns(period: Period) -> List[TurnDTO]:
                 source_assignment_ids=[a.id],
             ))
 
-    # Un TurnDTO fusionado por materia (todos los grupos juntos)
+    # Un TurnDTO por cada par de grupos (máximo 2 por salón)
     merged_conf_turns: List[TurnDTO] = []
     for subject_alias, assignment_list in conf_bucket.items():
-        group_codes = [a.group.group_code for a in assignment_list]
-        source_ids  = [a.id for a in assignment_list]
-        # Usar el profesor del primer assignment como referencia
-        merged_conf_turns.append(TurnDTO(
-            subject_alias=subject_alias,
-            group_codes=group_codes,
-            activity_type='C',
-            professor_id=assignment_list[0].professor.id,
-            source_assignment_ids=source_ids,
-        ))
+        # Dividir en chunks de 2 grupos
+        for i in range(0, len(assignment_list), 2):
+            chunk = assignment_list[i:i + 2]
+            merged_conf_turns.append(TurnDTO(
+                subject_alias=subject_alias,
+                group_codes=[a.group.group_code for a in chunk],
+                activity_type='C',
+                professor_id=chunk[0].professor.id,
+                source_assignment_ids=[a.id for a in chunk],
+            ))
 
     all_turns = merged_conf_turns + other_turns
     return all_turns

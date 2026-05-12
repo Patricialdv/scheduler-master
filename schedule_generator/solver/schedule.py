@@ -19,7 +19,7 @@ PENALTY_HARD              = 1_000_000
 PENALTY_INCOMPATIBLE_ROOM = 50_000  # Penalización crítica por tipo incompatible
 PENALTY_WRONG_ROOM_TYPE   = 10_000
 PENALTY_LUNCH_MISSING     = 5_000
-PENALTY_MISSING_TURN      = 500
+PENALTY_MISSING_TURN      = 60_000   # Mayor que prioridad 4 (50K) → el GA prefiere respetar restricciones antes que dejar turnos sin colocar
 
 # Activity → allowed room types (set for strict matching)
 #   - C (Conferencia): solo en Salón (S)
@@ -219,7 +219,6 @@ class Schedule:
                     the relaxed second pass).
         """
         required_room_type = ACTIVITY_ROOM_TYPES.get(turn.activity_type)
-        fixed_room = self._get_fixed_room(turn)
 
         # --- For conferences: try merging first ---
         if turn.activity_type == 'C':
@@ -239,28 +238,32 @@ class Schedule:
         ]
         random.shuffle(available_slots)
 
-        if fixed_room:
-            candidate_rooms = [fixed_room]
-        else:
-            if required_room_type:
-                # Preferir salas del tipo correcto; el fallback es PERMITIDO en placement
-                # porque el scoring ya penaliza sala incorrecta con PENALTY_WRONG_ROOM_TYPE.
-                # Sin fallback, muchos turnos quedan sin colocar y el GA no converge.
-                preferred_rooms = [r for r in self.rooms if r.room_type_code in required_room_type]
-                fallback_rooms  = [r for r in self.rooms if r.room_type_code not in required_room_type]
-                candidate_rooms = preferred_rooms if preferred_rooms else fallback_rooms
+        # --- Placement attempt ---
+        for d, t in available_slots:
+            fixed_room = self._get_fixed_room(turn, d, t)
+            if fixed_room:
+                candidate_rooms = [fixed_room]
             else:
-                candidate_rooms = list(self.rooms)
-        random.shuffle(candidate_rooms)
+                if required_room_type:
+                    preferred_rooms = [r for r in self.rooms if r.room_type_code in required_room_type]
+                    fallback_rooms  = [r for r in self.rooms if r.room_type_code not in required_room_type]
+                    candidate_rooms = preferred_rooms if preferred_rooms else fallback_rooms
+                else:
+                    candidate_rooms = list(self.rooms)
+                random.shuffle(candidate_rooms)
 
         # --- Placement attempt ---
         for d, t in available_slots:
             if self._has_hard_conflict(d, t, turn):
                 continue
+            # Para conferencias: evitar slots donde el mismo profesor
+            # ya tiene otra conferencia de la misma materia (mitad del split)
+            if turn.activity_type == 'C' and self._professor_has_same_subject_here(d, t, turn):
+                continue
             if strict and self._violates_constraints(d, t, turn):
                 continue
             for room in candidate_rooms:
-                if self._room_is_free(d, t, room):
+                if self._room_is_free(d, t, room) and not self._room_is_unavailable(d, t, room):
                     placed_turn = copy.deepcopy(turn)
                     placed_turn.room = room
                     self.matrix[d][t] = placed_turn
@@ -271,8 +274,15 @@ class Schedule:
             for d, t in available_slots:
                 if self._has_hard_conflict(d, t, turn):
                     continue
-                for room in candidate_rooms:
-                    if self._room_is_free(d, t, room):
+                if turn.activity_type == 'C' and self._professor_has_same_subject_here(d, t, turn):
+                    continue
+                fixed_room = self._get_fixed_room(turn, d, t)
+                if fixed_room:
+                    relaxed_rooms = [fixed_room]
+                else:
+                    relaxed_rooms = candidate_rooms
+                for room in relaxed_rooms:
+                    if self._room_is_free(d, t, room) and not self._room_is_unavailable(d, t, room):
                         placed_turn = copy.deepcopy(turn)
                         placed_turn.room = room
                         self.matrix[d][t] = placed_turn
@@ -280,22 +290,85 @@ class Schedule:
 
         return False
 
-    def _get_fixed_room(self, turn: Turn) -> Optional[Room]:
+    def _professor_has_same_subject_here(self, d: int, t: int, turn: Turn) -> bool:
         """
-        If a ROOM_ASSIGNMENT constraint targets this turn's subject+activity_type,
-        return the required Room DTO, else None.
+        Returns True si ya hay en (d,t) una conferencia del mismo profesor
+        y misma materia — indica que es la otra mitad del split y NO deben
+        coincidir en el mismo slot (el profesor no puede estar en dos salas).
         """
+        existing = self.matrix[d][t]
+        if existing.is_empty_slot():
+            return False
+        return (
+            existing.activity_type == 'C'
+            and existing.subject_alias == turn.subject_alias
+            and existing.professor_id == turn.professor_id
+        )
+
+    def _get_fixed_room(self, turn: Turn, d: int = -1, t: int = -1) -> Optional[Room]:
+        """
+        Retorna la sala fija para un turno según la jerarquía de prioridad:
+
+        1. Actividad específica con slot concreto
+           (asignatura + tipo + (d,t) coincide en applicable_slots)
+        2. Tipo de actividad de la asignatura
+           (asignatura + tipo, sin restricción de slot o ALWAYS)
+        3. Asignatura completa
+           (solo asignatura, aplica a todos los tipos)
+        4. Default por tipo de actividad
+           (manejado por ACTIVITY_ROOM_TYPES — no se gestiona aquí)
+
+        La restricción del usuario siempre tiene prioridad sobre el default.
+        """
+        candidates = []  # (specificity, room)
+
         for c in self.constraints:
             if getattr(c, 'constraint_type', None) != 'ROOM_ASSIGNMENT':
                 continue
             rule = getattr(c, 'rule_data', {})
-            if rule.get('subject_alias') == turn.subject_alias \
-                and rule.get('activity_type') == turn.activity_type:
-                room_id = rule.get('room_id')
-                for r in self.rooms:
-                    if str(r.id) == str(room_id):
-                        return r
-        return None
+
+            # Verificar si aplica a este turno
+            subject_match = (rule.get('subject_alias') == turn.subject_alias
+                             and turn.subject_alias is not None)
+            prof_match    = (rule.get('professor_id') is not None
+                             and str(rule.get('professor_id')) == str(turn.professor_id))
+
+            if not subject_match and not prof_match:
+                continue
+
+            rule_act = rule.get('activity_type')  # None = todos los tipos
+            if rule_act is not None and rule_act != turn.activity_type:
+                continue
+
+            # Verificar patrón de slot
+            applicable = rule.get('applicable_slots', set())
+            slot_matches_specific = (d >= 0 and t >= 0 and applicable and (d, t) in applicable)
+            slot_is_always        = not applicable  # sin restricción de slot
+
+            if applicable and not slot_matches_specific:
+                continue  # Patrón definido pero este slot no está incluido
+
+            # Calcular especificidad (mayor = más prioritario)
+            specificity = 0
+            if slot_matches_specific:
+                specificity += 4  # Nivel 1: slot concreto
+            if rule_act is not None:
+                specificity += 2  # Nivel 2: tipo de actividad especificado
+            if subject_match:
+                specificity += 1  # subject > professor en igualdad
+
+            room_id = rule.get('room_id')
+            for r in self.rooms:
+                if str(r.id) == str(room_id):
+                    candidates.append((specificity, r))
+                    break
+
+        if not candidates:
+            return None
+
+        # Retornar la sala del candidato más específico
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        return candidates[0][1]
 
     # ------------------------------------------------------------------
     # Conflict detection helpers
@@ -328,6 +401,19 @@ class Schedule:
                 return True
         return False
 
+    def _room_is_unavailable(self, d: int, t: int, room: Room) -> bool:
+        """Returns True if a ROOM UNAVAILABILITY constraint blocks this room at (d,t)."""
+        for c in self.constraints:
+            if getattr(c, 'constraint_type', None) != 'UNAVAILABILITY':
+                continue
+            if getattr(c, 'target_type', None) != 'ROOM':
+                continue
+            if getattr(c, 'target_id', None) != room.id:
+                continue
+            if (d, t) in getattr(c, 'blocked_slots', set()):  # t is 0-indexed here
+                return True
+        return False
+
     def _room_is_free(self, d: int, t: int, room: Room) -> bool:
         existing = self.matrix[d][t]
         if existing.is_empty_slot():
@@ -347,7 +433,7 @@ class Schedule:
         turn = self.matrix[d][t]
         if turn.is_empty_slot():
             return 0
-        cell_score = self._penalty_wrong_room_type(turn)
+        cell_score = self._penalty_wrong_room_type(turn, d, t)
         for constraint in self.constraints:
             cell_score += constraint.evaluate(turn, d, t)
         return cell_score
@@ -424,16 +510,21 @@ class Schedule:
         # Day imbalance: un swap de dos celdas ocupadas no cambia conteos por día,
         # por lo que la penalización de desequilibrio no varía — no hay que recalcularla.
 
-    def _penalty_wrong_room_type(self, turn: Turn) -> int:
+    def _penalty_wrong_room_type(self, turn: Turn, d: int = -1, t: int = -1) -> int:
         """
         Valida que el tipo de aula sea compatible con el tipo de actividad.
         Penalización crítica (INCOMPATIBLE_ROOM) si el tipo no coincide.
+        EXCEPCIÓN: si hay una restricción ROOM_ASSIGNMENT del usuario que
+        fuerza esa sala en ese slot, no se penaliza.
         """
         if turn.room is None or turn.activity_type is None:
             return 0
 
         allowed_types = ACTIVITY_ROOM_TYPES.get(turn.activity_type)
         if allowed_types and turn.room.room_type_code not in allowed_types:
+            fixed = self._get_fixed_room(turn, d, t)
+            if fixed and fixed.id == turn.room.id:
+                return 0  # Sala forzada por el usuario — no penalizar
             return PENALTY_INCOMPATIBLE_ROOM
 
         return 0

@@ -45,8 +45,8 @@ class Turn:
     def can_merge_with(self, other: 'Turn') -> bool:
         """
         Permite fusionar conferencias de la misma materia aunque tengan
-        distintos profesores (modelo cubano: todos los grupos asisten juntos).
-        Límite: máximo 3 grupos por celda.
+        distintos profesores (modelo cubano). Límite estricto: el total de
+        grupos después del merge no puede superar 2 (capacidad real del salón).
         """
         return (
             not self.is_empty
@@ -54,7 +54,7 @@ class Turn:
             and self.activity_type == 'C'
             and other.activity_type == 'C'
             and self.subject_alias == other.subject_alias
-            and len(self.group_codes) < 3
+            and len(self.group_codes) + len(other.group_codes) <= 2
         )
 
     def merge(self, other: 'Turn') -> None:
