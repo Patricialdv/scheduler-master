@@ -1,4 +1,3 @@
-/* Hide SimpleUI top bar */
 #header {
     display: none !important;
 }
@@ -6,7 +5,6 @@
 body {
     padding-top: 56px !important;
 }
-/* SimpleUI sidebar */
 .main-sidebar,
 #nav-sidebar {
     top: 56px !important;
